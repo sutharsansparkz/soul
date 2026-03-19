@@ -1,0 +1,89 @@
+{
+  "user_id": "unknown",
+  "updated_at": "2026-03-19T13:13:35+00:00",
+  "basics": {},
+  "current_chapter": {
+    "summary": "I had a rough day but I showed up again.",
+    "active_goals": [],
+    "active_fears": [],
+    "current_mood_trend": "venting"
+  },
+  "big_moments": [
+    {
+      "date": "2026-03-19",
+      "event": "I launched the beta today and I am excited.",
+      "emotional_weight": "high",
+      "companion_was_there": true
+    },
+    {
+      "date": "2026-03-19",
+      "event": "I launched the beta today and I am excited.",
+      "emotional_weight": "high",
+      "companion_was_there": true
+    },
+    {
+      "date": "2026-03-19",
+      "event": "I launched the beta today and I am excited.",
+      "emotional_weight": "high",
+      "companion_was_there": true
+    },
+    {
+      "date": "2026-03-19",
+      "event": "I launched the beta today and I am excited.",
+      "emotional_weight": "high",
+      "companion_was_there": true
+    },
+    {
+      "date": "2026-03-19",
+      "event": "I quit my job to launch something new.",
+      "emotional_weight": "high",
+      "companion_was_there": true
+    },
+    {
+      "date": "2026-03-19",
+      "event": "I launched the beta and I feel invisible, stressed, and alone.",
+      "emotional_weight": "high",
+      "companion_was_there": true
+    },
+    {
+      "date": "2026-03-19",
+      "event": "I launched the beta and I feel invisible, stressed, and alone.",
+      "emotional_weight": "high",
+      "companion_was_there": true
+    },
+    {
+      "date": "2026-03-19",
+      "event": "I launched the beta and I feel invisible, stressed, and alone.",
+      "emotional_weight": "high",
+      "companion_was_there": true
+    },
+    {
+      "date": "2026-03-19",
+      "event": "I launched the beta and I feel invisible, stressed, and alone.",
+      "emotional_weight": "high",
+      "companion_was_there": true
+    },
+    {
+      "date": "2026-03-19",
+      "event": "I launched the beta and I feel invisible, stressed, and alone.",
+      "emotional_weight": "high",
+      "companion_was_there": true
+    },
+    {
+      "date": "2026-03-19",
+      "event": "I launched the beta and I feel invisible, stressed, and alone.",
+      "emotional_weight": "high",
+      "companion_was_there": true
+    },
+    {
+      "date": "2026-03-19",
+      "event": "Late night coding still feels like home. I launched the beta.",
+      "emotional_weight": "high",
+      "companion_was_there": true
+    }
+  ],
+  "relationships": [],
+  "values_observed": [],
+  "triggers": [],
+  "things_they_love": []
+}

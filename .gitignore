@@ -1,0 +1,10 @@
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+soul_data/db/*.db
+soul_data/db/*.sqlite
+soul_data/chroma/
+soul_data/episodic_memory.jsonl
+soul_data/latest_session.log

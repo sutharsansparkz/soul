@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "soul-cli"
+version = "0.1.0"
+description = "SOUL: an AI companion with personality, emotional presence, and memory from the terminal."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "anthropic>=0.51.0",
+  "celery>=5.4.0",
+  "chromadb>=1.0.0",
+  "openai>=2.8.1",
+  "pydantic>=2.12.0",
+  "pydantic-settings>=2.12.0",
+  "psycopg[binary]>=3.2.0",
+  "PyYAML>=6.0.2",
+  "redis>=6.0.0",
+  "rich>=13.7.0",
+  "SQLAlchemy>=2.0.30",
+  "typer>=0.20.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.0",
+]
+voice = [
+  "openai-whisper",
+  "sounddevice>=0.4.7",
+]
+all = [
+  "openai-whisper",
+  "sounddevice>=0.4.7",
+]
+
+[project.scripts]
+soul = "soul.cli:main"
+soul-telegram = "soul.telegram_bot:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["soul*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

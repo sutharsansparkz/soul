@@ -1,0 +1,147 @@
+[
+  {
+    "run_date": "manual",
+    "dimensions_before": {
+      "humor_intensity": 0.5,
+      "response_length": 0.5,
+      "curiosity_depth": 0.5,
+      "directness": 0.5,
+      "warmth_expression": 0.5
+    },
+    "dimensions_after": {
+      "humor_intensity": 0.5,
+      "response_length": 0.5,
+      "curiosity_depth": 0.5,
+      "directness": 0.5,
+      "warmth_expression": 0.5
+    },
+    "resonance_signals": {},
+    "notes": "task run"
+  },
+  {
+    "run_date": "2026-03-19",
+    "dimensions_before": {
+      "humor_intensity": 0.5,
+      "response_length": 0.5,
+      "curiosity_depth": 0.5,
+      "directness": 0.5,
+      "warmth_expression": 0.5
+    },
+    "dimensions_after": {
+      "humor_intensity": 0.5,
+      "response_length": 0.5,
+      "curiosity_depth": 0.5,
+      "directness": 0.5,
+      "warmth_expression": 0.5
+    },
+    "resonance_signals": {},
+    "notes": "weekly drift task"
+  },
+  {
+    "run_date": "2026-03-19",
+    "dimensions_before": {
+      "humor_intensity": 0.5,
+      "response_length": 0.5,
+      "curiosity_depth": 0.5,
+      "directness": 0.5,
+      "warmth_expression": 0.5
+    },
+    "dimensions_after": {
+      "humor_intensity": 0.5,
+      "response_length": 0.5,
+      "curiosity_depth": 0.5,
+      "directness": 0.5,
+      "warmth_expression": 0.5
+    },
+    "resonance_signals": {},
+    "notes": "weekly drift task"
+  },
+  {
+    "run_date": "2026-03-19",
+    "dimensions_before": {
+      "humor_intensity": 0.5,
+      "response_length": 0.5,
+      "curiosity_depth": 0.5,
+      "directness": 0.5,
+      "warmth_expression": 0.5
+    },
+    "dimensions_after": {
+      "humor_intensity": 0.5,
+      "response_length": 0.5,
+      "curiosity_depth": 0.5,
+      "directness": 0.5,
+      "warmth_expression": 0.5
+    },
+    "resonance_signals": {},
+    "notes": "weekly drift task"
+  },
+  {
+    "run_date": "2026-03-19",
+    "dimensions_before": {
+      "humor_intensity": 0.5,
+      "response_length": 0.5,
+      "curiosity_depth": 0.5,
+      "directness": 0.5,
+      "warmth_expression": 0.5
+    },
+    "dimensions_after": {
+      "humor_intensity": 0.5,
+      "response_length": 0.5,
+      "curiosity_depth": 0.5,
+      "directness": 0.5,
+      "warmth_expression": 0.5
+    },
+    "resonance_signals": {},
+    "notes": "weekly drift task"
+  },
+  {
+    "run_date": "2026-03-19",
+    "dimensions_before": {
+      "humor_intensity": 0.5,
+      "response_length": 0.5,
+      "curiosity_depth": 0.5,
+      "directness": 0.5,
+      "warmth_expression": 0.5
+    },
+    "dimensions_after": {
+      "humor_intensity": 0.5,
+      "response_length": 0.5,
+      "curiosity_depth": 0.5,
+      "directness": 0.5,
+      "warmth_expression": 0.5
+    },
+    "resonance_signals": {
+      "humor_intensity": 0.0,
+      "response_length": 0.0,
+      "curiosity_depth": 0.0,
+      "directness": 0.0,
+      "warmth_expression": 0.0
+    },
+    "notes": "weekly drift task"
+  },
+  {
+    "run_date": "2026-03-19",
+    "dimensions_before": {
+      "humor_intensity": 0.5,
+      "response_length": 0.5,
+      "curiosity_depth": 0.5,
+      "directness": 0.5,
+      "warmth_expression": 0.5
+    },
+    "dimensions_after": {
+      "humor_intensity": 0.5,
+      "response_length": 0.5,
+      "curiosity_depth": 0.5,
+      "directness": 0.5,
+      "warmth_expression": 0.5
+    },
+    "resonance_signals": {
+      "humor_intensity": 0.0,
+      "response_length": 0.0,
+      "curiosity_depth": 0.0,
+      "directness": 0.0,
+      "warmth_expression": 0.0
+    },
+    "notes": "weekly drift task"
+  }
+]
