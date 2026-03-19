@@ -72,6 +72,7 @@ def consolidate_lines(
     ledger_path: str | Path | None = None,
     settings: Settings | None = None,
 ) -> ConsolidationResult:
+    resolved_settings = settings or get_settings()
     ledger = _load_ledger(ledger_path)
     if dedupe_key and ledger.get(dedupe_key):
         return ConsolidationResult(
@@ -84,7 +85,7 @@ def consolidate_lines(
         )
 
     user_lines = _extract_user_lines(lines)
-    memory_repo = EpisodicMemoryRepository(memory_path)
+    memory_repo = EpisodicMemoryRepository(memory_path, settings=resolved_settings)
     memories_added = 0
     for line in user_lines:
         if not line.strip():
@@ -100,7 +101,7 @@ def consolidate_lines(
             metadata={
                 "source_key": dedupe_key or "",
                 "session_id": dedupe_key or "consolidation",
-                "user_id": (settings.user_id if settings is not None else "local-user"),
+                "user_id": resolved_settings.user_id,
                 "timestamp": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
             },
         )

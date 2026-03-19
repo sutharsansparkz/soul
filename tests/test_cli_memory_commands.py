@@ -62,6 +62,32 @@ def test_memories_search_uses_hms_reranked_output(tmp_path, monkeypatch):
     assert str(first.content) in result.stdout
 
 
+def test_memories_search_merges_episodic_and_manual_sources(tmp_path, monkeypatch):
+    settings = _settings(tmp_path)
+    db.init_db(settings.database_url)
+    episodic_repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    episodic_repo.add_text(
+        "launch strategy from emotional memory",
+        emotional_tag="celebrating",
+        metadata={"session_id": "s1", "user_id": settings.user_id, "timestamp": "2026-03-18T10:00:00+00:00"},
+    )
+    db.save_memory(
+        settings.database_url,
+        label="manual launch note",
+        content="launch strategy checklist for the week",
+        importance=0.8,
+        source="manual",
+    )
+    monkeypatch.setattr(cli, "_bootstrap", lambda: (settings, SimpleNamespace(name="Ara")))
+
+    result = CliRunner().invoke(cli.app, ["memories", "search", "launch strategy"])
+
+    assert result.exit_code == 0
+    assert "Unified Memory Search" in result.stdout
+    assert "episodic" in result.stdout
+    assert "manual" in result.stdout
+
+
 def test_memories_top_cold_and_boost_commands(tmp_path, monkeypatch):
     settings = _settings(tmp_path)
     db.init_db(settings.database_url)

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 
+from soul import db
+from soul.config import Settings
 from soul.memory.shared_language import SharedLanguageStore
-from soul.tasks.consolidate import consolidate_day
+from soul.tasks.consolidate import consolidate_day, consolidate_lines
 
 
 def test_consolidate_day_merges_structured_story_state_without_duplication(tmp_path):
@@ -62,3 +64,28 @@ def test_consolidate_day_merges_structured_story_state_without_duplication(tmp_p
     assert len(story["big_moments"]) == 1
     assert shared_entries[0].phrase == "late night coding"
     assert shared_entries[0].count == 1
+
+
+def test_consolidate_lines_uses_provided_settings_for_memory_writes(tmp_path):
+    settings = Settings(
+        database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
+        soul_data_path=str(tmp_path / "soul_data"),
+        chroma_path=str(tmp_path / "chroma"),
+        chroma_enabled=False,
+        user_id="audit-user",
+    )
+    db.init_db(settings.database_url)
+
+    result = consolidate_lines(
+        [
+            "user: I launched the beta and felt stressed about the runway.",
+            "assistant: Tell me more.",
+        ],
+        story_path=tmp_path / "user_story.json",
+        memory_path=tmp_path / "episodic_memory.jsonl",
+        settings=settings,
+    )
+
+    assert result.memories_added >= 1
+    rows = db.list_episodic_memories(settings.database_url, user_id=settings.user_id, include_cold=True, limit=20)
+    assert rows

@@ -1,6 +1,6 @@
 # Testing Strategy
 
-This scaffold uses contract-style tests to lock the SOUL MVP spec before the runtime exists.
+The project uses contract-style tests to keep the CLI/runtime behavior aligned with `pr.txt`.
 
 The current suite focuses on:
 
@@ -10,8 +10,10 @@ The current suite focuses on:
 - CLI command surface
 - persona regression fixtures (20+ deterministic conversation turns)
 - HMS scoring formula, retriever reranking, and nightly decay idempotency
+- unified memory search/clear CLI contracts and retrieval update behavior
+- consolidation retention safety and settings-aware persistence behavior
 
-These tests are intentionally self-contained so they can run without the application package being implemented yet.
+These tests are intentionally deterministic so they can run in CI without network-dependent model calls.
 
 ## Dockerized Path
 

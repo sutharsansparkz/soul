@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import Connection, Engine
 
 
@@ -161,12 +161,91 @@ def init_db(database: Path | str) -> None:
             connection.exec_driver_sql("PRAGMA journal_mode = WAL;")
         for statement in statements:
             connection.exec_driver_sql(statement)
+        _migrate_hms_schema(connection)
         connection.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS idx_memory_scores_user_score ON memory_scores(user_id, hms_score DESC)"
         )
         connection.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS idx_episodic_memory_user_tier ON episodic_memory(user_id, tier, timestamp DESC)"
         )
+
+
+def _migrate_hms_schema(connection: Connection) -> None:
+    inspector = inspect(connection)
+    tables = set(inspector.get_table_names())
+    if "episodic_memory" in tables:
+        _ensure_columns(
+            connection,
+            inspector=inspector,
+            table_name="episodic_memory",
+            columns={
+                "word_count": "INTEGER DEFAULT 0",
+                "flagged": "INTEGER DEFAULT 0",
+                "ref_count": "INTEGER DEFAULT 0",
+                "tier": "TEXT DEFAULT 'present'",
+                "memory_type": "TEXT DEFAULT 'moment'",
+            },
+        )
+        connection.execute(
+            text(
+                """
+                UPDATE episodic_memory
+                SET word_count = COALESCE(word_count, 0),
+                    flagged = COALESCE(flagged, 0),
+                    ref_count = COALESCE(ref_count, 0),
+                    tier = COALESCE(NULLIF(tier, ''), 'present'),
+                    memory_type = COALESCE(NULLIF(memory_type, ''), 'moment')
+                """
+            )
+        )
+
+    if "memory_scores" in tables:
+        _ensure_columns(
+            connection,
+            inspector=inspector,
+            table_name="memory_scores",
+            columns={
+                "score_emotional": "REAL NOT NULL DEFAULT 0.5",
+                "score_retrieval": "REAL NOT NULL DEFAULT 0.0",
+                "score_temporal": "REAL NOT NULL DEFAULT 1.0",
+                "score_flagged": "REAL NOT NULL DEFAULT 0.0",
+                "score_volume": "REAL NOT NULL DEFAULT 0.3",
+                "hms_score": "REAL NOT NULL DEFAULT 0.5",
+                "last_computed": "TEXT",
+                "last_retrieved": "TEXT",
+                "decay_rate": "REAL DEFAULT 0.023",
+            },
+        )
+        connection.execute(
+            text(
+                """
+                UPDATE memory_scores
+                SET score_emotional = COALESCE(score_emotional, 0.5),
+                    score_retrieval = COALESCE(score_retrieval, 0.0),
+                    score_temporal = COALESCE(score_temporal, 1.0),
+                    score_flagged = COALESCE(score_flagged, 0.0),
+                    score_volume = COALESCE(score_volume, 0.3),
+                    hms_score = COALESCE(hms_score, 0.5),
+                    decay_rate = COALESCE(decay_rate, 0.023),
+                    last_computed = COALESCE(NULLIF(last_computed, ''), :now_iso)
+                """
+            ),
+            {"now_iso": utcnow_iso()},
+        )
+
+
+def _ensure_columns(
+    connection: Connection,
+    *,
+    inspector,
+    table_name: str,
+    columns: dict[str, str],
+) -> None:
+    existing = {column["name"] for column in inspector.get_columns(table_name)}
+    for column_name, definition in columns.items():
+        if column_name in existing:
+            continue
+        connection.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
 
 
 def create_session(database: Path | str, companion_name: str, session_id: str | None = None) -> str:
@@ -656,7 +735,8 @@ def list_memory_scores_for_decay(database: Path | str, *, user_id: str | None = 
     params: dict[str, object] = {}
     where_sql = ""
     if user_id is not None:
-        where_sql = "WHERE ms.user_id = :user_id"
+        # Filter by episodic owner so legacy rows without score records are still decayed/backfilled.
+        where_sql = "WHERE em.user_id = :user_id"
         params["user_id"] = user_id
     with connect(database) as connection:
         return _fetch_dicts(

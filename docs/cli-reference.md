@@ -11,7 +11,7 @@
 ## Memory
 
 - `soul memories` (HMS-ranked list with score bars and tiers)
-- `soul memories search "query"` (semantic retrieval reranked by HMS score)
+- `soul memories search "query"` (unified search across episodic + manual memories, reranked with HMS weighting)
 - `soul memories top` (top 10 vivid memories)
 - `soul memories cold` (cold-tier memory list)
 - `soul memories boost "query"` (manual HMS flag/boost)

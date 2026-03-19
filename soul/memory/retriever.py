@@ -33,13 +33,30 @@ class MemoryRetriever:
         half_life_days = float(getattr(self.settings, "hms_decay_halflife_days", 30.0))
         cold_threshold = float(getattr(self.settings, "hms_cold_threshold", 0.05))
 
-        candidates = self.repository.store.search(query, limit=candidate_k)
+        candidates = self.repository.store.search(
+            query,
+            limit=candidate_k,
+            user_id=user_id,
+            min_hms_score=(cold_threshold if passive else None),
+            exclude_tiers=({"cold"} if passive else None),
+        )
         ranked: list[tuple[float, MemoryRecord, str]] = []
         for record in candidates:
             memory_id = self._resolve_memory_id(record)
             row = db.get_episodic_memory(self.settings.database_url, memory_id)
             if row is None:
-                row = self._backfill_memory_row(record, user_id=user_id, memory_id=memory_id)
+                metadata_user_id = str(record.metadata.get("user_id", "")).strip()
+                if metadata_user_id and metadata_user_id != user_id:
+                    continue
+                row = self._backfill_memory_row(
+                    record,
+                    user_id=metadata_user_id or user_id,
+                    memory_id=memory_id,
+                )
+
+            row_user_id = str(row.get("user_id", "")).strip()
+            if row_user_id and row_user_id != user_id:
+                continue
 
             score_row = db.get_memory_score(self.settings.database_url, memory_id)
             if score_row is None:

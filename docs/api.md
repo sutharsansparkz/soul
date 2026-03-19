@@ -1,0 +1,72 @@
+# API and Interfaces
+
+SOUL does not expose an HTTP API in this repository. The public interface is CLI + scheduled tasks.
+
+## CLI surface
+
+Core:
+
+- `soul chat`
+- `soul chat --voice`
+- `soul chat --replay`
+- `soul status`
+- `soul run-jobs`
+- `soul db init`
+- `soul config`
+
+Memory:
+
+- `soul memories`
+- `soul memories search "<query>"`
+- `soul memories top`
+- `soul memories cold`
+- `soul memories boost "<query>"`
+- `soul memories clear`
+
+Profile/evolution:
+
+- `soul story`
+- `soul story edit`
+- `soul drift`
+- `soul milestones`
+- `soul telegram-bot`
+
+In-session commands (`soul chat`):
+
+- `/quit`
+- `/save "note"`
+- `/mood`
+- `/story`
+- `/voice on|off`
+
+## Memory command contracts
+
+- `soul memories`:
+  - HMS-sorted list with score bar + tier.
+- `soul memories search`:
+  - unified search across episodic HMS memory and manual SQL memory.
+  - merged ranking includes semantic relevance and HMS/importance score.
+  - source label is shown per row (`episodic` or `manual`).
+- `soul memories clear`:
+  - clears legacy SQL memories, episodic SQL rows/scores, and vector surfaces (local + optional Chroma).
+
+## HMS retrieval contract
+
+- Candidate fetch size: `MEMORY_CANDIDATE_K` (default `20`).
+- Reranking formula:
+  - `rank = semantic_similarity * HMS_SEMANTIC_WEIGHT + hms_score * HMS_SCORE_WEIGHT`
+  - defaults: `0.55` and `0.45`.
+- Retrieval updates:
+  - increment `ref_count` (`R++`)
+  - recompute HMS components and tier
+  - update SQL score row + vector metadata
+
+## Scheduled task interfaces
+
+Celery task names:
+
+- `soul.tasks.consolidate.nightly_consolidation_task`
+- `soul.tasks.hms_decay.nightly_hms_decay_task`
+- `soul.tasks.drift_weekly.weekly_drift_task`
+- `soul.tasks.proactive.proactive_presence_task`
+- `soul.evolution.reflection.monthly_reflection_task`

@@ -1,17 +1,20 @@
-# SOUL Documentation Scaffold
+# SOUL Documentation
 
-This directory holds the spec-level references for the SOUL CLI MVP.
+This directory documents the implemented SOUL CLI runtime and its production-facing behavior.
 
-The docs are intentionally short and implementation-oriented:
+## Core references
 
-- `docs/soul-design.md` covers the identity, emotional, memory, and evolution layers.
-- `docs/memory-schema.md` defines the key persisted data shapes.
-- `docs/drift-algorithm.md` captures the personality drift rules and limits.
-- `docs/cli-reference.md` lists the command surface for the initial CLI.
-- `docs/testing.md` explains the contract-test approach used in this scaffold.
-- The container/runtime layer lives in `Dockerfile`, `docker-compose.yml`, and `Makefile`.
-- `make docker-test` or `docker compose run --rm test` runs the test suite inside the app image.
-- `docker compose up -d app worker beat postgres redis chroma` starts the full local stack.
-- The `worker` and `beat` services execute Celery directly, not a custom polling loop.
+- `docs/architecture.md`: runtime architecture, request/data flow, and background jobs.
+- `docs/modules.md`: package/module map with ownership and responsibilities.
+- `docs/api.md`: command and runtime interfaces (CLI + in-session command contract).
+- `docs/cli-reference.md`: quick command reference.
+- `docs/memory-schema.md`: persisted memory/profile schema, HMS scoring model, and retrieval behavior.
+- `docs/drift-algorithm.md`: weekly personality drift constraints and update logic.
+- `docs/soul-design.md`: high-level design principles and non-negotiables.
+- `docs/testing.md`: test coverage and execution path.
 
-The goal is to keep the architecture readable before the runtime exists.
+## Operational notes
+
+- Local bootstrap: initialize DB with `soul db init`, then start with `soul chat`.
+- Background jobs: `celery -A soul.tasks worker --loglevel=info` and `celery -A soul.tasks beat --loglevel=info`.
+- Containerized stack: `docker compose up -d app worker beat postgres redis chroma`.

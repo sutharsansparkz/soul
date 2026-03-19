@@ -420,35 +420,54 @@ def memories_list(ctx: typer.Context) -> None:
 def memories_search(query: str = typer.Argument(..., help="Search text.")) -> None:
     settings, _ = _bootstrap()
     episodic_repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
-    ranked = episodic_repo.search(query, limit=20)
-    if not ranked:
-        manual = db.search_memories(settings.database_url, query, limit=10)
-        if manual:
-            table = Table(title=f'Memory Search: "{query}" (legacy fallback)', box=box.SIMPLE_HEAVY)
-            table.add_column("Source", style="cyan", width=10)
-            table.add_column("Label", style="magenta", width=16)
-            table.add_column("Content", style="white")
-            for item in manual:
-                table.add_row("manual", str(item["label"]), str(item["content"]))
-            console.print(table)
-            return
+    episodic = episodic_repo.search(query, limit=20)
+    manual = db.search_memories(settings.database_url, query, limit=20)
+    if not episodic and not manual:
         console.print("[dim]No matching memories found.[/dim]")
         return
 
-    table = Table(title=f'Semantic Memory Search: "{query}" (HMS reranked)', box=box.SIMPLE_HEAVY)
+    merged: list[dict[str, object]] = []
+    for item in episodic:
+        score = _record_hms_score(item)
+        merged.append(
+            {
+                "source": "episodic",
+                "score": score,
+                "tier": _record_tier(item),
+                "content": str(item.content),
+                "rank": _record_retrieval_rank(item, query=query),
+            }
+        )
+
+    for item in manual:
+        content = f"{item['label']}: {item['content']}"
+        score = _clamp01(float(item.get("importance", 0.5)))
+        semantic = _simple_similarity(query, content)
+        merged.append(
+            {
+                "source": "manual",
+                "score": score,
+                "tier": "-",
+                "content": str(content),
+                "rank": (semantic * 0.55) + (score * 0.45),
+            }
+        )
+
+    merged.sort(key=lambda row: float(row["rank"]), reverse=True)
+
+    table = Table(title=f'Unified Memory Search: "{query}" (HMS reranked)', box=box.SIMPLE_HEAVY)
+    table.add_column("Source", style="cyan", width=10)
     table.add_column("Score", style="cyan", width=8)
     table.add_column("Tier", style="magenta", width=10)
     table.add_column("Content", style="white")
     table.add_column("Rank", style="cyan", width=8)
-    for item in ranked[:20]:
-        score = _record_hms_score(item)
-        tier = _record_tier(item)
-        rank = str(item.metadata.get("retrieval_rank", "-"))
+    for item in merged[:20]:
         table.add_row(
-            f"{score:.2f}",
-            tier,
-            str(item.content),
-            rank,
+            str(item["source"]),
+            f"{float(item['score']):.2f}",
+            str(item["tier"]),
+            str(item["content"]),
+            f"{float(item['rank']):.4f}",
         )
     console.print(table)
 
@@ -532,6 +551,32 @@ def _record_tier(record) -> str:
 def _score_bar(score: float, width: int = 12) -> str:
     filled = int(max(0, min(width, round(score * width))))
     return ("█" * filled) + ("░" * (width - filled))
+
+
+def _record_retrieval_rank(record, *, query: str) -> float:
+    raw = record.metadata.get("retrieval_rank")
+    if raw is not None:
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            pass
+    semantic = _simple_similarity(query, str(record.content))
+    return (semantic * 0.55) + (_record_hms_score(record) * 0.45)
+
+
+def _simple_similarity(query: str, content: str) -> float:
+    query_tokens = {token.casefold() for token in query.split() if token.strip()}
+    if not query_tokens:
+        return 0.0
+    content_tokens = {token.casefold() for token in content.split() if token.strip()}
+    overlap = len(query_tokens & content_tokens) / max(1, len(query_tokens))
+    if query.casefold() in content.casefold():
+        overlap += 0.35
+    return _clamp01(overlap)
+
+
+def _clamp01(value: float) -> float:
+    return max(0.0, min(1.0, float(value)))
 
 
 @story_app.callback(invoke_without_command=True)

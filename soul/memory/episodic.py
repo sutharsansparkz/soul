@@ -116,7 +116,11 @@ class EpisodicMemoryRepository:
         retrieved = self.retrieve(query=query, user_id=self.settings.user_id, k=limit, passive=False)
         if retrieved:
             return retrieved
-        return self.store.search(query, limit=limit)
+        return self.store.search(
+            query,
+            limit=limit,
+            user_id=self.settings.user_id,
+        )
 
     def list_cold(self, limit: int = 50) -> list[MemoryRecord]:
         rows = db.list_cold_memories(self.settings.database_url, user_id=self.settings.user_id, limit=limit)

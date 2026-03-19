@@ -66,3 +66,30 @@ def test_retrieval_updates_ref_count_and_last_retrieved(tmp_path):
     assert before_score is not None and after_score is not None
     assert float(after_score["score_retrieval"]) >= float(before_score["score_retrieval"])
     assert after_score["last_retrieved"] is not None
+
+
+def test_retriever_filters_out_other_user_memories(tmp_path):
+    settings = _settings(tmp_path)
+    db.init_db(settings.database_url)
+    repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    own = repo.add_text(
+        "launch runway planning details",
+        emotional_tag="stressed",
+        metadata={"session_id": "s1", "user_id": settings.user_id, "timestamp": "2026-03-18T10:00:00+00:00"},
+    )
+    foreign = repo.add_text(
+        "launch runway planning details",
+        emotional_tag="celebrating",
+        metadata={"session_id": "s2", "user_id": "other-user", "timestamp": "2026-03-18T11:00:00+00:00"},
+    )
+
+    rows = MemoryRetriever(settings, repo).retrieve(
+        query="launch runway planning",
+        user_id=settings.user_id,
+        k=5,
+        passive=True,
+    )
+
+    ids = {str(item.metadata.get("memory_id", item.id)) for item in rows}
+    assert str(own.metadata.get("memory_id", own.id)) in ids
+    assert str(foreign.metadata.get("memory_id", foreign.id)) not in ids

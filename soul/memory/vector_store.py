@@ -25,7 +25,16 @@ class MemoryStore(Protocol):
 
     def load_all(self) -> list[MemoryRecord]: ...
 
-    def search(self, query: str, limit: int = 5) -> list[MemoryRecord]: ...
+    def search(
+        self,
+        query: str,
+        limit: int = 5,
+        *,
+        user_id: str | None = None,
+        min_hms_score: float | None = None,
+        include_tiers: set[str] | None = None,
+        exclude_tiers: set[str] | None = None,
+    ) -> list[MemoryRecord]: ...
 
     def clear(self) -> int: ...
 
@@ -57,10 +66,27 @@ class LocalVectorStore:
                 records.append(MemoryRecord(**payload))
         return records
 
-    def search(self, query: str, limit: int = 5) -> list[MemoryRecord]:
+    def search(
+        self,
+        query: str,
+        limit: int = 5,
+        *,
+        user_id: str | None = None,
+        min_hms_score: float | None = None,
+        include_tiers: set[str] | None = None,
+        exclude_tiers: set[str] | None = None,
+    ) -> list[MemoryRecord]:
         tokens = {token.lower() for token in query.split() if token}
         scored: list[tuple[float, MemoryRecord]] = []
         for record in self.load_all():
+            if not _matches_filters(
+                record,
+                user_id=user_id,
+                min_hms_score=min_hms_score,
+                include_tiers=include_tiers,
+                exclude_tiers=exclude_tiers,
+            ):
+                continue
             text_tokens = {token.lower() for token in record.content.split() if token}
             overlap = len(tokens & text_tokens)
             similarity = overlap / max(1, len(tokens) if tokens else 1)
@@ -158,13 +184,23 @@ class ChromaVectorStore:
             )
         return records
 
-    def search(self, query: str, limit: int = 5) -> list[MemoryRecord]:
+    def search(
+        self,
+        query: str,
+        limit: int = 5,
+        *,
+        user_id: str | None = None,
+        min_hms_score: float | None = None,
+        include_tiers: set[str] | None = None,
+        exclude_tiers: set[str] | None = None,
+    ) -> list[MemoryRecord]:
         if self.collection is None:
             return []
         try:
+            raw_limit = max(limit * 4, limit)
             payload = self.collection.query(
                 query_texts=[query],
-                n_results=limit,
+                n_results=raw_limit,
                 include=["documents", "metadatas", "distances"],
             )
         except Exception:
@@ -191,7 +227,18 @@ class ChromaVectorStore:
                     metadata={key: value for key, value in metadata.items() if key not in {"emotional_tag", "importance", "memory_type", "ref_count"}},
                 )
             )
-        return records
+        filtered = [
+            record
+            for record in records
+            if _matches_filters(
+                record,
+                user_id=user_id,
+                min_hms_score=min_hms_score,
+                include_tiers=include_tiers,
+                exclude_tiers=exclude_tiers,
+            )
+        ]
+        return filtered[:limit]
 
     def clear(self) -> int:
         if self.collection is None:
@@ -278,12 +325,35 @@ class HybridVectorStore:
             return self.chroma_store.load_all()
         return []
 
-    def search(self, query: str, limit: int = 5) -> list[MemoryRecord]:
+    def search(
+        self,
+        query: str,
+        limit: int = 5,
+        *,
+        user_id: str | None = None,
+        min_hms_score: float | None = None,
+        include_tiers: set[str] | None = None,
+        exclude_tiers: set[str] | None = None,
+    ) -> list[MemoryRecord]:
         if self.chroma_store is not None:
-            records = self.chroma_store.search(query, limit=limit)
+            records = self.chroma_store.search(
+                query,
+                limit=limit,
+                user_id=user_id,
+                min_hms_score=min_hms_score,
+                include_tiers=include_tiers,
+                exclude_tiers=exclude_tiers,
+            )
             if records:
                 return records
-        return self.local_store.search(query, limit=limit)
+        return self.local_store.search(
+            query,
+            limit=limit,
+            user_id=user_id,
+            min_hms_score=min_hms_score,
+            include_tiers=include_tiers,
+            exclude_tiers=exclude_tiers,
+        )
 
     def clear(self) -> int:
         deleted = self.local_store.clear()
@@ -306,6 +376,40 @@ def build_vector_store(path: str | Path, settings: Settings | None = None) -> Hy
         if chroma.collection is None:
             chroma = None
     return HybridVectorStore(local_store=local, chroma_store=chroma)
+
+
+def _as_float(value: object, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _matches_filters(
+    record: MemoryRecord,
+    *,
+    user_id: str | None,
+    min_hms_score: float | None,
+    include_tiers: set[str] | None,
+    exclude_tiers: set[str] | None,
+) -> bool:
+    if user_id:
+        record_user_id = str(record.metadata.get("user_id", "")).strip()
+        if record_user_id and record_user_id != user_id:
+            return False
+    hms_score = _as_float(record.metadata.get("hms_score", record.importance), default=record.importance)
+    if min_hms_score is not None and hms_score < min_hms_score:
+        return False
+    tier = str(record.metadata.get("tier", "")).strip().casefold()
+    if include_tiers:
+        normalized = {value.casefold() for value in include_tiers}
+        if tier and tier not in normalized:
+            return False
+    if exclude_tiers:
+        normalized = {value.casefold() for value in exclude_tiers}
+        if tier and tier in normalized:
+            return False
+    return True
 
 
 def format_memory_blocks(memories: Iterable[MemoryRecord]) -> list[str]:
