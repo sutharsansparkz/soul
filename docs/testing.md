@@ -2,6 +2,18 @@
 
 The project uses contract-style tests to keep the CLI/runtime behavior aligned with `pr.txt`.
 
+## Local Path
+
+For local runs, install the test extra from `pyproject.toml` so `pytest` is available:
+
+```bash
+pip install -e '.[dev]'
+```
+
+`requirements.txt` tracks runtime dependencies only, so it may not include test tooling.
+
+`make test` runs the suite as `python -m pytest -q`, which matches the Makefile's module-based invocation.
+
 The current suite focuses on:
 
 - soul document structure and prompt compilation expectations
@@ -20,9 +32,7 @@ These tests are intentionally deterministic so they can run in CI without networ
 The production-oriented scaffold also exposes the same validation inside Docker:
 
 ```bash
-docker compose build
-docker compose up -d redis chroma postgres
-docker compose run --rm test
+make docker-test
 ```
 
-That path is wired through the `test` service in `docker-compose.yml` so the app image, runtime dependencies, and test runner stay aligned.
+`make docker-test` wraps `scripts/docker-test.sh`, which builds the test image, starts `redis`, `chroma`, and `postgres`, and runs the suite in the `test` service. Docker Desktop or Docker Engine must be installed, and the Docker CLI must be on `PATH`, for that path to work.

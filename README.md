@@ -14,8 +14,8 @@ This repository now contains a fuller local-to-production runtime:
 - LLM calls use Anthropic first, OpenAI second, and fall back to an offline heuristic companion response when keys are missing or unavailable.
 - Mood state can persist in Redis, episodic memory uses a local fallback plus optional Chroma, and background jobs can run through the bundled worker/beat processes or the Celery app entrypoint.
 - Maintenance now includes consolidation, resonance-based drift, proactive reach-out dispatch, monthly reflection generation, and archival/purge of raw session transcripts after retention windows. When LLM credentials are configured, consolidation can enrich the user profile with structured goals, fears, relationships, and shared phrases from completed sessions.
-- `docker compose up -d app worker beat postgres redis chroma` brings up the containerized runtime.
-- `docker compose run --rm test` executes the test suite inside the image.
+- `make test` runs the local test suite as `python -m pytest -q` after verifying `pytest` is installed.
+- `make docker-test` builds the test image, starts the Compose services, and runs the suite inside Docker.
 
 ## Documentation
 
@@ -37,15 +37,19 @@ soul db init
 soul chat
 ```
 
+Local test runs need the dev extra from `pyproject.toml` because `requirements.txt` only tracks runtime dependencies. Install it with:
+
+```bash
+pip install -e '.[dev]'
+```
+
 ## Docker
 
 ```bash
-docker compose build
-docker compose up -d app worker beat postgres redis chroma
-docker compose run --rm test
+make docker-test
 ```
 
-Docker Desktop or another local Docker engine must be running before those commands will succeed.
+`make docker-test` uses Docker Compose under the hood, so Docker Desktop or another local Docker engine must be running and the Docker CLI must be available on `PATH`.
 
 The container entrypoints for `worker` and `beat` now launch Celery directly, so the runtime matches the background job model instead of a custom polling loop.
 
