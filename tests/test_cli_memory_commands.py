@@ -13,8 +13,6 @@ def _settings(tmp_path) -> Settings:  # noqa: ANN001
     return Settings(
         database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
         soul_data_path=str(tmp_path / "soul_data"),
-        chroma_path=str(tmp_path / "chroma"),
-        chroma_enabled=False,
     )
 
 

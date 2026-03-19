@@ -17,4 +17,5 @@ This directory documents the implemented SOUL CLI runtime and its production-fac
 
 - Local bootstrap: initialize DB with `soul db init`, then start with `soul chat`.
 - Background jobs: `celery -A soul.tasks worker --loglevel=info` and `celery -A soul.tasks beat --loglevel=info`.
-- Containerized stack: `docker compose up -d app worker beat redis` (optional compatibility services: `postgres`, `chroma`).
+- Containerized stack: `docker compose up -d app worker beat redis`.
+- Default persistence is SQLite + Redis. Legacy compatibility dependencies live behind `pip install -e '.[legacy]'`.

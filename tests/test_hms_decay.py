@@ -11,8 +11,6 @@ def test_hms_decay_moves_old_memories_to_cold_and_is_idempotent(tmp_path):
     settings = Settings(
         database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
         soul_data_path=str(tmp_path / "soul_data"),
-        chroma_path=str(tmp_path / "chroma"),
-        chroma_enabled=False,
         hms_cold_threshold=0.05,
         hms_decay_halflife_days=30.0,
     )

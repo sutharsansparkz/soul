@@ -17,7 +17,6 @@ def test_mood_engine_degrades_cleanly_when_redis_is_unavailable(tmp_path):
         database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
         soul_data_path=str(tmp_path / "soul_data"),
         redis_url="redis://localhost:6399/0",
-        chroma_path=str(tmp_path / "chroma"),
     )
     engine = MoodEngine(settings)
 
@@ -79,7 +78,6 @@ def test_consolidate_day_merges_structured_insights_when_available(tmp_path, mon
     settings = Settings(
         database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
         soul_data_path=str(tmp_path / "soul_data"),
-        chroma_path=str(tmp_path / "chroma"),
     )
     session_log.write_text(
         "\n".join(
@@ -122,7 +120,6 @@ def test_chat_voice_mode_uses_recording_when_prompt_is_blank(tmp_path, monkeypat
     settings = Settings(
         database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
         soul_data_path=str(tmp_path / "soul_data"),
-        chroma_path=str(tmp_path / "chroma"),
     )
     db.init_db(settings.database_url)
 

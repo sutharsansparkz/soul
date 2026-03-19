@@ -13,8 +13,6 @@ def test_in_session_save_command_creates_flagged_hms_memory(tmp_path, monkeypatc
     settings = Settings(
         database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
         soul_data_path=str(tmp_path / "soul_data"),
-        chroma_path=str(tmp_path / "chroma"),
-        chroma_enabled=False,
     )
     db.init_db(settings.database_url)
     soul = Soul(

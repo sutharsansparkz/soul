@@ -1,1 +1,0 @@
-CREATE DATABASE soul_test;

@@ -21,7 +21,7 @@
 - `episodic.py`: repository for episodic writes/retrieval/top/cold/boost/decay/clear.
 - `scorer.py`: HMS formulas, temporal decay, and tier transitions.
 - `retriever.py`: top-candidate retrieval (FTS top-20) + semantic/HMS rerank + retrieval-time score updates.
-- `vector_store.py`: local store + optional Chroma hybrid backend.
+- `vector_store.py`: local JSONL-backed fallback store used alongside the SQLite memory path.
 - `user_story.py`: user story schema/repository and heuristic extraction.
 - `shared_language.py`: recurring phrase tracking.
 

@@ -47,7 +47,6 @@ def test_dispatch_reach_out_candidates_dedupes_daily_delivery(tmp_path, monkeypa
     settings = Settings(
         database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
         soul_data_path=str(tmp_path / "soul_data"),
-        chroma_path=str(tmp_path / "chroma"),
         telegram_bot_token="token",
         telegram_chat_id="12345",
     )

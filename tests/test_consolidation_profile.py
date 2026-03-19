@@ -70,8 +70,6 @@ def test_consolidate_lines_uses_provided_settings_for_memory_writes(tmp_path):
     settings = Settings(
         database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
         soul_data_path=str(tmp_path / "soul_data"),
-        chroma_path=str(tmp_path / "chroma"),
-        chroma_enabled=False,
         user_id="audit-user",
     )
     db.init_db(settings.database_url)

@@ -14,7 +14,6 @@ def test_context_builder_orders_mood_tags_before_soul_prompt(tmp_path):
     settings = Settings(
         database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
         soul_data_path=str(tmp_path / "soul_data"),
-        chroma_path=str(tmp_path / "chroma"),
     )
     db.init_db(settings.database_url)
     soul = Soul(
@@ -42,7 +41,6 @@ def test_context_builder_retrieves_up_to_8_and_injects_top_3_to_5(tmp_path):
     settings = Settings(
         database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
         soul_data_path=str(tmp_path / "soul_data"),
-        chroma_path=str(tmp_path / "chroma"),
     )
     db.init_db(settings.database_url)
     soul = Soul(
@@ -84,7 +82,6 @@ def test_context_builder_prefers_more_recent_memory_on_ties(tmp_path):
     settings = Settings(
         database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
         soul_data_path=str(tmp_path / "soul_data"),
-        chroma_path=str(tmp_path / "chroma"),
     )
     db.init_db(settings.database_url)
     soul = Soul(

@@ -36,4 +36,4 @@ The production-oriented scaffold also exposes the same validation inside Docker:
 make docker-test
 ```
 
-`make docker-test` wraps `scripts/docker-test.sh`, which builds the test image, starts `redis`, `chroma`, and `postgres`, and runs the suite in the `test` service. Docker Desktop or Docker Engine must be installed, and the Docker CLI must be on `PATH`, for that path to work.
+`make docker-test` wraps `scripts/docker-test.sh`, which builds the test image, starts `redis`, and runs the suite in the `test` service against the default SQLite-backed runtime. Docker Desktop or Docker Engine must be installed, and the Docker CLI must be on `PATH`, for that path to work.

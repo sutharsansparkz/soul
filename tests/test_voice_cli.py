@@ -17,7 +17,6 @@ def test_chat_voice_mode_uses_recorded_transcript_before_prompt(tmp_path, monkey
         database_url=database_url,
         soul_data_path=str(tmp_path / "soul_data"),
         redis_url="redis://localhost:6399/0",
-        chroma_path=str(tmp_path / "chroma"),
     )
     spoken: list[str] = []
     captured_messages: list[str] = []
@@ -83,7 +82,6 @@ def test_chat_voice_mode_reports_recording_and_transcription_failures(tmp_path, 
         database_url=database_url,
         soul_data_path=str(tmp_path / "soul_data"),
         redis_url="redis://localhost:6399/0",
-        chroma_path=str(tmp_path / "chroma"),
     )
     soul = Soul(
         raw={"identity": {"name": "Ara", "voice": "warm", "energy": "steady"}, "character": {}, "ethics": {}, "worldview": {}},
@@ -129,7 +127,6 @@ def test_chat_voice_mode_reports_transcription_failure_for_input_file(tmp_path, 
         database_url=database_url,
         soul_data_path=str(tmp_path / "soul_data"),
         redis_url="redis://localhost:6399/0",
-        chroma_path=str(tmp_path / "chroma"),
     )
     soul = Soul(
         raw={"identity": {"name": "Ara", "voice": "warm", "energy": "steady"}, "character": {}, "ethics": {}, "worldview": {}},

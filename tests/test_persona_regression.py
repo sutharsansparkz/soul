@@ -25,7 +25,6 @@ def test_persona_regression_fixtures_are_stable_and_deterministic(tmp_path):
         openai_api_key=None,
         database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
         soul_data_path=str(tmp_path / "soul_data"),
-        chroma_path=str(tmp_path / "chroma"),
         redis_url="redis://localhost:6399/0",
         mood_model_enabled=False,
     )
