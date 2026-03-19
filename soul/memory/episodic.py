@@ -38,3 +38,6 @@ class EpisodicMemoryRepository:
 
     def search(self, query: str, limit: int = 5) -> list[MemoryRecord]:
         return self.store.search(query, limit=limit)
+
+    def clear(self) -> int:
+        return self.store.clear()

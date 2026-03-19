@@ -11,8 +11,8 @@
 ## Memory
 
 - `soul memories`
-- `soul memories search "query"`
-- `soul memories clear`
+- `soul memories search "query"` (semantic, merges episodic + manual memory surfaces)
+- `soul memories clear` (wipes SQL + episodic + optional vector-backed memory state)
 
 ## Profile
 

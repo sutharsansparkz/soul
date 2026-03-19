@@ -8,6 +8,7 @@ The current suite focuses on:
 - drift caps and weekly adjustment rules
 - user story schema shape
 - CLI command surface
+- persona regression fixtures (20+ deterministic conversation turns)
 
 These tests are intentionally self-contained so they can run without the application package being implemented yet.
 

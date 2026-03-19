@@ -46,6 +46,43 @@ class PostProcessor:
                 source="auto",
             )
 
+    def process_session_end(self, *, session_id: str) -> None:
+        if db.is_session_memory_exported(self.settings.database_url, session_id):
+            return
+        rows = db.get_session_messages(self.settings.database_url, session_id)
+        user_rows = [row for row in rows if str(row.get("role", "")).casefold() == "user" and str(row.get("content", "")).strip()]
+        if not user_rows:
+            db.mark_session_memory_exported(self.settings.database_url, session_id)
+            return
+
+        for chunk in self._chunk_rows(user_rows, size=3):
+            content = " ".join(str(row["content"]).strip() for row in chunk if str(row.get("content", "")).strip()).strip()
+            if not content:
+                continue
+            timestamp = str(chunk[-1].get("created_at") or db.utcnow_iso())
+            dominant_mood = self._dominant_user_mood(chunk)
+            importance = min(0.85, round(0.55 + min(0.2, len(content.split()) / 200), 2))
+            self.episodic_repo.add_text(
+                content,
+                emotional_tag=dominant_mood,
+                importance=importance,
+                memory_type="moment",
+                metadata={
+                    "timestamp": timestamp,
+                    "session_id": session_id,
+                    "source": "session_end",
+                },
+            )
+            db.save_memory(
+                self.settings.database_url,
+                session_id=session_id,
+                label="session memory chunk",
+                content=content,
+                importance=importance,
+                source="session_end",
+            )
+        db.mark_session_memory_exported(self.settings.database_url, session_id)
+
     def _track_milestones(
         self,
         *,
@@ -232,3 +269,22 @@ class PostProcessor:
         while "__" in slug:
             slug = slug.replace("__", "_")
         return slug.strip("_") or "event"
+
+    def _chunk_rows(self, rows: list[dict[str, object]], *, size: int) -> list[list[dict[str, object]]]:
+        chunks: list[list[dict[str, object]]] = []
+        for index in range(0, len(rows), size):
+            chunk = rows[index : index + size]
+            if chunk:
+                chunks.append(chunk)
+        return chunks
+
+    def _dominant_user_mood(self, rows: list[dict[str, object]]) -> str | None:
+        counts: dict[str, int] = {}
+        for row in rows:
+            mood = str(row.get("user_mood") or "").strip()
+            if not mood:
+                continue
+            counts[mood] = counts.get(mood, 0) + 1
+        if not counts:
+            return None
+        return max(counts.items(), key=lambda item: item[1])[0]

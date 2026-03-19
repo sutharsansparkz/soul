@@ -10,7 +10,8 @@ USER_STORY_FIXTURE = """
   "basics": {
     "name": "Asha",
     "location": "Chennai",
-    "occupation": "founder"
+    "occupation": "founder",
+    "birthday": "1995-03-19"
   },
   "current_chapter": {
     "summary": "Working on a startup, feeling pressure from investors.",
@@ -25,6 +26,9 @@ USER_STORY_FIXTURE = """
       "emotional_weight": "high",
       "companion_was_there": true
     }
+  ],
+  "upcoming_events": [
+    { "date": "2026-03-25", "title": "Investor meeting", "notes": "Series A prep" }
   ],
   "relationships": [
     { "name": "Priya", "role": "best friend", "notes": "going through a breakup" }
@@ -41,6 +45,7 @@ REQUIRED_TOP_LEVEL_KEYS = {
     "basics",
     "current_chapter",
     "big_moments",
+    "upcoming_events",
     "relationships",
     "values_observed",
     "triggers",
@@ -54,11 +59,13 @@ def test_user_story_fixture_has_expected_top_level_shape():
     assert REQUIRED_TOP_LEVEL_KEYS <= set(story)
     assert story["current_chapter"]["summary"].startswith("Working on a startup")
     assert story["big_moments"][0]["companion_was_there"] is True
+    assert story["basics"]["birthday"] == "1995-03-19"
 
 
 def test_user_story_lists_are_json_friendly():
     story = json.loads(USER_STORY_FIXTURE)
 
     assert isinstance(story["relationships"], list)
+    assert isinstance(story["upcoming_events"], list)
     assert isinstance(story["values_observed"], list)
     assert isinstance(story["triggers"], list)

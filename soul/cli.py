@@ -4,29 +4,32 @@ import json
 import os
 import shlex
 import subprocess
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import typer
 from rich import box
 from rich.console import Console
+from rich.live import Live
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
+from rich.text import Text
 
 from soul import __version__, db
 from soul.config import Settings, get_settings
 from soul.core.context_builder import ContextBuilder
-from soul.core.llm_client import LLMClient
+from soul.core.llm_client import LLMClient, LLMResult
 from soul.core.mood_engine import MoodEngine, MoodSnapshot
 from soul.core.post_processor import PostProcessor
 from soul.core.soul_loader import Soul, load_soul
 from soul.evolution.drift_engine import DriftLogRepository
 from soul.evolution.reflection import generate_monthly_reflection
+from soul.memory.episodic import EpisodicMemoryRepository
 from soul.presence.telegram import TelegramBotRunner
 from soul.presence.voice import VoiceBridge
 from soul.memory.user_story import UserStoryRepository
-from soul.tasks.consolidate import consolidate_pending_sessions
+from soul.tasks.consolidate import archive_and_purge_old_session_messages, consolidate_pending_sessions
 from soul.tasks.drift_weekly import derive_resonance_signals, run_drift_task
 from soul.tasks.proactive import (
     build_reach_out_candidates,
@@ -61,6 +64,7 @@ def _ensure_runtime_files(settings: Settings) -> None:
         settings.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
     settings.chroma_dir.mkdir(parents=True, exist_ok=True)
     settings.session_log_dir.mkdir(parents=True, exist_ok=True)
+    settings.session_archive_dir.mkdir(parents=True, exist_ok=True)
 
     for path, default in (
         (settings.reach_out_candidates_file, "[]\n"),
@@ -86,6 +90,34 @@ def _print_header(soul: Soul, session_id: str, mood: MoodSnapshot | None = None)
 
 def _stream_stdout(text: str) -> None:
     print(text, end="", flush=True)
+
+
+def _render_live_reply(
+    client: LLMClient,
+    *,
+    speaker_name: str,
+    system_prompt: str,
+    messages: list[dict[str, str]],
+    mood: MoodSnapshot,
+) -> LLMResult:
+    live_text = Text("", style="white")
+    panel = Panel(live_text, box=box.SIMPLE, border_style="cyan", title=speaker_name)
+
+    def handle_chunk(chunk: str) -> None:
+        if not chunk:
+            return
+        live_text.append(chunk)
+        live.update(Panel(live_text, box=box.SIMPLE, border_style="cyan", title=speaker_name))
+
+    with Live(panel, console=console, refresh_per_second=25, transient=True) as live:
+        result = client.reply(
+            system_prompt=system_prompt,
+            messages=messages,
+            mood=mood,
+            stream_handler=handle_chunk,
+        )
+    console.print(f"[bold magenta]{speaker_name}[/bold magenta] > {result.text}")
+    return result
 
 
 def _show_last_session(settings: Settings) -> None:
@@ -208,6 +240,25 @@ def _handle_session_command(
     return False, voice_enabled
 
 
+def _memory_search_score(query: str, text: str, *, importance: float, timestamp: str | None) -> float:
+    query_tokens = {token.casefold() for token in query.split() if token.strip()}
+    text_tokens = {token.casefold() for token in text.split() if token.strip()}
+    overlap = len(query_tokens & text_tokens)
+    overlap_score = overlap / max(1, len(query_tokens))
+    substring_boost = 0.4 if query.casefold() in text.casefold() else 0.0
+    recency = 0.2
+    if timestamp:
+        try:
+            parsed = datetime.fromisoformat(timestamp)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            age_days = max(0.0, (datetime.now(timezone.utc) - parsed).total_seconds() / 86_400)
+            recency = 1.0 / (1.0 + (age_days / 30.0))
+        except ValueError:
+            recency = 0.2
+    return (1.8 * overlap_score) + substring_boost + (0.8 * importance) + (0.6 * recency)
+
+
 @app.command()
 def chat(
     voice: bool = typer.Option(False, "--voice", help="Synthesize assistant replies when configured."),
@@ -285,6 +336,11 @@ def chat(
                 continue
 
             current_mood = mood_engine.analyze(user_input, user_id=settings.user_id)
+            console.print(
+                f"[dim]{soul.name} mood[/dim] "
+                f"[magenta]{current_mood.companion_state}[/magenta] "
+                f"[dim](user: {current_mood.user_mood})[/dim]"
+            )
             db.log_message(
                 settings.database_url,
                 session_id=session_id,
@@ -297,14 +353,13 @@ def chat(
             )
 
             bundle = builder.build(session_id=session_id, user_input=user_input, mood=current_mood)
-            print(f"{soul.name} > ", end="", flush=True)
-            result = client.reply(
+            result = _render_live_reply(
+                client,
+                speaker_name=soul.name,
                 system_prompt=bundle.system_prompt,
                 messages=bundle.messages,
                 mood=current_mood,
-                stream_handler=_stream_stdout,
             )
-            print("", flush=True)
             _voice_output(voice_bridge, voice_output_enabled, result.text)
 
             db.log_message(
@@ -329,6 +384,7 @@ def chat(
             )
     finally:
         db.close_session(settings.database_url, session_id)
+        post_processor.process_session_end(session_id=session_id)
 
 
 @memories_app.callback(invoke_without_command=True)
@@ -336,34 +392,90 @@ def memories_list(ctx: typer.Context) -> None:
     if ctx.invoked_subcommand is not None:
         return
     settings, _ = _bootstrap()
-    memories = db.list_memories(settings.database_url)
-    if not memories:
+    manual = db.list_memories(settings.database_url)
+    episodic = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings).recent(limit=20)
+    if not manual and not episodic:
         console.print("[dim]No memories stored yet.[/dim]")
         return
 
     table = Table(title="Recent Memories", box=box.SIMPLE_HEAVY)
+    table.add_column("Source", style="cyan", width=10)
     table.add_column("When", style="cyan", width=20)
     table.add_column("Label", style="magenta", width=18)
     table.add_column("Content", style="white")
-    for item in memories:
-        table.add_row(str(item["created_at"]), str(item["label"]), str(item["content"]))
+    for item in manual:
+        table.add_row("manual", str(item["created_at"]), str(item["label"]), str(item["content"]))
+    for item in episodic:
+        timestamp = item.metadata.get("timestamp") or item.metadata.get("created_at") or "-"
+        table.add_row("episodic", str(timestamp), str(item.memory_type), str(item.content))
     console.print(table)
 
 
 @memories_app.command("search")
 def memories_search(query: str = typer.Argument(..., help="Search text.")) -> None:
     settings, _ = _bootstrap()
-    matches = db.search_memories(settings.database_url, query)
-    if not matches:
+    episodic_repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    episodic = episodic_repo.search(query, limit=8)
+    manual = db.search_memories(settings.database_url, query, limit=8)
+
+    merged: list[dict[str, object]] = []
+    for item in episodic:
+        timestamp = item.metadata.get("timestamp") or item.metadata.get("created_at")
+        merged.append(
+            {
+                "source": "episodic",
+                "label": item.memory_type,
+                "content": item.content,
+                "importance": float(item.importance),
+                "timestamp": str(timestamp) if timestamp else None,
+            }
+        )
+    for item in manual:
+        merged.append(
+            {
+                "source": "manual",
+                "label": str(item.get("label", "memory")),
+                "content": str(item.get("content", "")),
+                "importance": float(item.get("importance", 0.5)),
+                "timestamp": str(item.get("created_at", "")) or None,
+            }
+        )
+
+    deduped: dict[str, dict[str, object]] = {}
+    for item in merged:
+        key = str(item["content"]).strip().casefold()
+        if not key:
+            continue
+        existing = deduped.get(key)
+        if existing is None or float(item["importance"]) > float(existing["importance"]):
+            deduped[key] = item
+
+    ranked = sorted(
+        deduped.values(),
+        key=lambda item: _memory_search_score(
+            query,
+            str(item["content"]),
+            importance=float(item["importance"]),
+            timestamp=str(item["timestamp"]) if item["timestamp"] else None,
+        ),
+        reverse=True,
+    )
+    if not ranked:
         console.print("[dim]No matching memories found.[/dim]")
         return
 
-    table = Table(title=f'Memory Search: "{query}"', box=box.SIMPLE_HEAVY)
+    table = Table(title=f'Semantic Memory Search: "{query}"', box=box.SIMPLE_HEAVY)
+    table.add_column("Source", style="cyan", width=10)
     table.add_column("Label", style="magenta", width=18)
     table.add_column("Content", style="white")
     table.add_column("Importance", style="cyan", width=10)
-    for item in matches:
-        table.add_row(str(item["label"]), str(item["content"]), str(item["importance"]))
+    for item in ranked[:12]:
+        table.add_row(
+            str(item["source"]),
+            str(item["label"]),
+            str(item["content"]),
+            str(item["importance"]),
+        )
     console.print(table)
 
 
@@ -374,8 +486,10 @@ def memories_clear() -> None:
     if not confirmed:
         console.print("[dim]Cancelled.[/dim]")
         return
+    episodic_repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
     deleted = db.clear_memories(settings.database_url)
-    console.print(f"[green]Deleted {deleted} memories.[/green]")
+    vector_deleted = episodic_repo.clear()
+    console.print(f"[green]Deleted {deleted} SQL memories and {vector_deleted} episodic/vector entries.[/green]")
 
 
 @story_app.callback(invoke_without_command=True)
@@ -452,15 +566,44 @@ def status() -> None:
     total_sessions = db.count_sessions(settings.database_url)
     total_messages = db.count_messages(settings.database_url)
 
+    now = datetime.now(timezone.utc)
     days_since_last_chat: int | None = None
     if last_message_at:
         timestamp = datetime.fromisoformat(last_message_at)
-        delta = datetime.now(timezone.utc) - timestamp
+        delta = now - timestamp
         days_since_last_chat = delta.days
+
+    stress_events = db.list_user_message_moods_since(
+        settings.database_url,
+        moods=("stressed", "overwhelmed", "venting"),
+        since=(now.replace(microsecond=0) - timedelta(days=14)).isoformat(),
+    )
+    stress_signal_dates = [str(item["created_at"]) for item in stress_events]
+    milestones_today: list[str] = []
+    for milestone in db.list_milestones(settings.database_url, limit=200):
+        occurred_at = str(milestone.get("occurred_at", ""))
+        try:
+            occurred = datetime.fromisoformat(occurred_at)
+        except ValueError:
+            continue
+        if (occurred.month, occurred.day) == (now.month, now.day):
+            milestones_today.append(str(milestone.get("note") or milestone.get("kind") or "Milestone"))
+    first_sessions = db.list_sessions(settings.database_url, limit=1)
+    if first_sessions:
+        first_started = str(first_sessions[0].get("started_at", ""))
+        try:
+            first_date = datetime.fromisoformat(first_started)
+        except ValueError:
+            first_date = None
+        if first_date and first_date.year < now.year and (first_date.month, first_date.day) == (now.month, now.day):
+            milestones_today.append("relationship anniversary")
 
     candidates = build_reach_out_candidates(
         days_since_last_chat=days_since_last_chat,
         story=story_repo.load(),
+        today=now,
+        stress_signal_dates=stress_signal_dates,
+        milestones_today=milestones_today,
     )
     save_reach_out_candidates(settings.reach_out_candidates_file, candidates)
 
@@ -495,6 +638,11 @@ def run_jobs() -> None:
         source="manual",
         settings=settings,
     )
+    archive = archive_and_purge_old_session_messages(
+        database_url=settings.database_url,
+        archive_dir=settings.session_archive_dir,
+        retention_days=settings.raw_retention_days,
+    )
     resonance_signals = derive_resonance_signals(settings.database_url)
     drift_result = run_drift_task(
         personality_path=settings.personality_file,
@@ -503,13 +651,41 @@ def run_jobs() -> None:
     )
     reflection_entry = generate_monthly_reflection(settings)
     last_message_at = db.get_last_message_timestamp(settings.database_url)
+    now = datetime.now(timezone.utc)
     days_since_last_chat = None
     if last_message_at:
         timestamp = datetime.fromisoformat(last_message_at)
-        days_since_last_chat = (datetime.now(timezone.utc) - timestamp).days
+        days_since_last_chat = (now - timestamp).days
+    stress_events = db.list_user_message_moods_since(
+        settings.database_url,
+        moods=("stressed", "overwhelmed", "venting"),
+        since=(now.replace(microsecond=0) - timedelta(days=14)).isoformat(),
+    )
+    stress_signal_dates = [str(item["created_at"]) for item in stress_events]
+    milestones_today: list[str] = []
+    for milestone in db.list_milestones(settings.database_url, limit=200):
+        occurred_at = str(milestone.get("occurred_at", ""))
+        try:
+            occurred = datetime.fromisoformat(occurred_at)
+        except ValueError:
+            continue
+        if (occurred.month, occurred.day) == (now.month, now.day):
+            milestones_today.append(str(milestone.get("note") or milestone.get("kind") or "Milestone"))
+    first_sessions = db.list_sessions(settings.database_url, limit=1)
+    if first_sessions:
+        first_started = str(first_sessions[0].get("started_at", ""))
+        try:
+            first_date = datetime.fromisoformat(first_started)
+        except ValueError:
+            first_date = None
+        if first_date and first_date.year < now.year and (first_date.month, first_date.day) == (now.month, now.day):
+            milestones_today.append("relationship anniversary")
     candidates = build_reach_out_candidates(
         days_since_last_chat=days_since_last_chat,
         story=story_repo.load(),
+        today=now,
+        stress_signal_dates=stress_signal_dates,
+        milestones_today=milestones_today,
     )
     save_reach_out_candidates(settings.reach_out_candidates_file, candidates)
     delivery = dispatch_reach_out_candidates(settings, candidates)
@@ -520,7 +696,9 @@ def run_jobs() -> None:
         f"drift_dims={len(drift_result.updated)} "
         f"reflection={'1' if reflection_entry else '0'} "
         f"reach_outs={len(candidates)} "
-        f"delivered={delivery['sent']}"
+        f"delivered={delivery['sent']} "
+        f"archived={archive['archived_sessions']} "
+        f"purged={archive['purged_messages']}"
     )
 
 

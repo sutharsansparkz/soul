@@ -5,9 +5,11 @@
 The user story profile tracks:
 
 - basic user identity
+- optional birthday metadata
 - current chapter summary
 - active goals and fears
 - important moments
+- upcoming events
 - relationships
 - observed values
 - triggers

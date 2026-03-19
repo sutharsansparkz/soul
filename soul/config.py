@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     )
     mood_model_enabled: bool = Field(default=False, alias="MOOD_MODEL_ENABLED")
     mood_decay_hours: int = Field(default=18, alias="MOOD_DECAY_HOURS")
+    raw_retention_days: int = Field(default=90, alias="RAW_RETENTION_DAYS")
     redis_key_prefix: str = Field(default="soul", alias="REDIS_KEY_PREFIX")
 
     elevenlabs_api_key: str | None = Field(default=None, alias="ELEVENLABS_API_KEY")
@@ -105,6 +106,10 @@ class Settings(BaseSettings):
         return self.session_log_dir / "latest_session.log"
 
     @property
+    def session_archive_dir(self) -> Path:
+        return self.session_log_dir / "archive"
+
+    @property
     def consolidation_ledger_file(self) -> Path:
         return self.soul_data_dir / "consolidation_ledger.json"
 
@@ -147,6 +152,7 @@ class Settings(BaseSettings):
         if self.database_is_sqlite:
             redacted["sqlite_path"] = str(self.sqlite_path)
         redacted["chroma_dir"] = str(self.chroma_dir)
+        redacted["session_archive_dir"] = str(self.session_archive_dir)
         return redacted
 
 

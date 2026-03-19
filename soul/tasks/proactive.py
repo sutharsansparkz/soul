@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 import json
 
@@ -54,8 +54,11 @@ def build_reach_out_candidates(
     days_since_last_chat: int | None,
     story: UserStory | None = None,
     today: datetime | None = None,
+    stress_signal_dates: list[str] | None = None,
+    milestones_today: list[str] | None = None,
 ) -> list[ReachOutCandidate]:
     today = today or datetime.now()
+    today_date = today.date()
     candidates: list[ReachOutCandidate] = []
 
     if days_since_last_chat is not None and days_since_last_chat >= 3:
@@ -74,18 +77,26 @@ def build_reach_out_candidates(
             )
         )
 
-    if story and story.current_chapter:
-        mood = str(story.current_chapter.get("current_mood_trend", "")).casefold()
-        if mood in {"stressed", "overwhelmed", "venting"}:
+    if _has_stress_signal_three_days_ago(stress_signal_dates or [], today=today_date):
+        candidates.append(
+            ReachOutCandidate(
+                trigger="past_stress_3d",
+                message="Three days ago sounded heavy. How is that stress sitting with you today?",
+            )
+        )
+
+    if story:
+        upcoming = _nearest_upcoming_event(story, today=today_date)
+        if upcoming is not None:
             candidates.append(
                 ReachOutCandidate(
-                    trigger="past_stress_3d",
-                    message="You've seemed under a lot of pressure lately. How is that sitting with you now?",
+                    trigger="upcoming_event",
+                    message=f"You have {upcoming['title']} on {upcoming['date']}. Want to check in before it?",
                 )
             )
 
-        summary = str(story.current_chapter.get("summary", ""))
-        if "birthday" in summary.casefold():
+        birthday = _parse_month_day(str(story.basics.get("birthday", "")), fallback_year=today_date.year)
+        if birthday and (birthday.month, birthday.day) == (today_date.month, today_date.day):
             candidates.append(
                 ReachOutCandidate(
                     trigger="birthday",
@@ -93,10 +104,67 @@ def build_reach_out_candidates(
                 )
             )
 
+    if milestones_today:
+        milestone_label = milestones_today[0]
+        candidates.append(
+            ReachOutCandidate(
+                trigger="milestone_today",
+                message=f"It's a milestone day: {milestone_label}. I'm glad we've made it here together.",
+            )
+        )
+
     unique: dict[str, ReachOutCandidate] = {}
     for candidate in candidates:
         unique[candidate.trigger] = candidate
     return list(unique.values())
+
+
+def _parse_month_day(value: str, *, fallback_year: int) -> date | None:
+    text = value.strip()
+    if not text:
+        return None
+    try:
+        return datetime.strptime(text, "%Y-%m-%d").date()
+    except ValueError:
+        pass
+    try:
+        parsed = datetime.strptime(text, "%m-%d")
+        return date(fallback_year, parsed.month, parsed.day)
+    except ValueError:
+        return None
+
+
+def _has_stress_signal_three_days_ago(values: list[str], *, today: date) -> bool:
+    target = today - timedelta(days=3)
+    for item in values:
+        try:
+            observed = datetime.fromisoformat(item).date()
+        except ValueError:
+            continue
+        if observed == target:
+            return True
+    return False
+
+
+def _nearest_upcoming_event(story: UserStory, *, today: date) -> dict[str, str] | None:
+    events = getattr(story, "upcoming_events", []) or []
+    nearest: tuple[date, dict[str, str]] | None = None
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        raw_date = str(event.get("date", "")).strip()
+        raw_title = str(event.get("title", "")).strip() or "something important"
+        try:
+            event_date = datetime.strptime(raw_date, "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        days_until = (event_date - today).days
+        if days_until < 0 or days_until > 7:
+            continue
+        normalized = {"date": raw_date, "title": raw_title[:100]}
+        if nearest is None or event_date < nearest[0]:
+            nearest = (event_date, normalized)
+    return nearest[1] if nearest else None
 
 
 def dispatch_reach_out_candidates(
@@ -148,13 +216,42 @@ if celery_app is not None:
         db.init_db(settings.database_url)
         story_repo = UserStoryRepository(settings.user_story_file)
         last_message_at = db.get_last_message_timestamp(settings.database_url)
+        now = datetime.now(timezone.utc)
         days_since_last_chat = None
         if last_message_at:
             timestamp = datetime.fromisoformat(last_message_at)
-            days_since_last_chat = (datetime.now(timezone.utc) - timestamp).days
+            days_since_last_chat = (now - timestamp).days
+        stress_events = db.list_user_message_moods_since(
+            settings.database_url,
+            moods=("stressed", "overwhelmed", "venting"),
+            since=(now - timedelta(days=14)).replace(microsecond=0).isoformat(),
+        )
+        stress_signal_dates = [str(item["created_at"]) for item in stress_events]
+        milestones = db.list_milestones(settings.database_url, limit=200)
+        milestones_today: list[str] = []
+        for milestone in milestones:
+            occurred_at = str(milestone.get("occurred_at", ""))
+            try:
+                occurred = datetime.fromisoformat(occurred_at)
+            except ValueError:
+                continue
+            if (occurred.month, occurred.day) == (now.month, now.day):
+                milestones_today.append(str(milestone.get("note") or milestone.get("kind") or "Milestone"))
+        first_sessions = db.list_sessions(settings.database_url, limit=1)
+        if first_sessions:
+            first_started = str(first_sessions[0].get("started_at", ""))
+            try:
+                first_date = datetime.fromisoformat(first_started)
+            except ValueError:
+                first_date = None
+            if first_date and first_date.year < now.year and (first_date.month, first_date.day) == (now.month, now.day):
+                milestones_today.append("relationship anniversary")
         candidates = build_reach_out_candidates(
             days_since_last_chat=days_since_last_chat,
             story=story_repo.load(),
+            today=now,
+            stress_signal_dates=stress_signal_dates,
+            milestones_today=milestones_today,
         )
         save_reach_out_candidates(settings.reach_out_candidates_file, candidates)
         delivery = dispatch_reach_out_candidates(settings, candidates)

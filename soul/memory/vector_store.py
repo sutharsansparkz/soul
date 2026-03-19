@@ -27,6 +27,8 @@ class MemoryStore(Protocol):
 
     def search(self, query: str, limit: int = 5) -> list[MemoryRecord]: ...
 
+    def clear(self) -> int: ...
+
 
 class LocalVectorStore:
     """Stable lexical fallback that works without external services."""
@@ -66,6 +68,11 @@ class LocalVectorStore:
         scored.sort(key=lambda item: item[0], reverse=True)
         return [record for _, record in scored[:limit]]
 
+    def clear(self) -> int:
+        existing = self.load_all()
+        self.path.write_text("", encoding="utf-8")
+        return len(existing)
+
 
 class ChromaVectorStore:
     """Optional Chroma-backed memory store for production deployments."""
@@ -73,6 +80,7 @@ class ChromaVectorStore:
     def __init__(self, settings: Settings, collection_name: str = "episodic_memory"):
         self.settings = settings
         self.collection_name = collection_name
+        self.client = None
         self.collection = self._build_collection()
 
     def add(self, record: MemoryRecord) -> None:
@@ -152,6 +160,19 @@ class ChromaVectorStore:
             )
         return records
 
+    def clear(self) -> int:
+        if self.collection is None:
+            return 0
+        try:
+            payload = self.collection.get()
+            ids = payload.get("ids") or []
+            if not ids:
+                return 0
+            self.collection.delete(ids=ids)
+            return len(ids)
+        except Exception:
+            return 0
+
     def _build_collection(self):
         try:
             import chromadb
@@ -165,6 +186,7 @@ class ChromaVectorStore:
                 client = chromadb.HttpClient(host=host, port=int(port or "8000"))
             else:
                 client = chromadb.PersistentClient(path=str(self.settings.chroma_dir))
+            self.client = client
 
             embedding_function = None
             if self.settings.openai_api_key:
@@ -210,6 +232,12 @@ class HybridVectorStore:
             if records:
                 return records
         return self.local_store.search(query, limit=limit)
+
+    def clear(self) -> int:
+        deleted = self.local_store.clear()
+        if self.chroma_store is not None:
+            deleted += self.chroma_store.clear()
+        return deleted
 
 
 def build_vector_store(path: str | Path, settings: Settings | None = None) -> HybridVectorStore:

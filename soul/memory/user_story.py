@@ -22,6 +22,7 @@ class UserStory:
     basics: dict[str, str] = field(default_factory=dict)
     current_chapter: dict[str, object] = field(default_factory=dict)
     big_moments: list[BigMoment] = field(default_factory=list)
+    upcoming_events: list[dict[str, str]] = field(default_factory=list)
     relationships: list[dict[str, str]] = field(default_factory=list)
     values_observed: list[str] = field(default_factory=list)
     triggers: list[str] = field(default_factory=list)
@@ -92,6 +93,7 @@ def ensure_story_defaults(story: UserStory) -> UserStory:
     story.current_chapter.setdefault("active_fears", [])
     story.current_chapter.setdefault("current_mood_trend", "forming")
     story.big_moments = story.big_moments or []
+    story.upcoming_events = story.upcoming_events or []
     story.relationships = story.relationships or []
     story.values_observed = story.values_observed or []
     story.triggers = story.triggers or []
@@ -135,9 +137,19 @@ def apply_story_observations(
             story.basics["occupation"] = occupation
             changed = True
 
+        birthday = _extract_birthday(stripped, lowered)
+        if birthday and story.basics.get("birthday") != birthday:
+            story.basics["birthday"] = birthday
+            changed = True
+
         loved = _capture_after(stripped, lowered, "i love ")
         if loved and loved not in story.things_they_love:
             story.things_they_love.append(loved)
+            changed = True
+
+        upcoming_event = _extract_upcoming_event(stripped)
+        if upcoming_event and upcoming_event not in story.upcoming_events:
+            story.upcoming_events.append(upcoming_event)
             changed = True
 
         relationship = _extract_relationship(stripped)
@@ -250,3 +262,23 @@ def _extract_list_signals(original: str, lowered: str, markers: tuple[str, ...])
 
 def _looks_like_big_moment(lowered: str) -> bool:
     return any(token in lowered for token in BIG_MOMENT_PATTERNS)
+
+
+def _extract_birthday(original: str, lowered: str) -> str | None:
+    for marker in ("my birthday is ", "my birthday is on ", "birthday is "):
+        value = _capture_after(original, lowered, marker)
+        if value:
+            return value
+    return None
+
+
+def _extract_upcoming_event(text: str) -> dict[str, str] | None:
+    match = re.search(r"\b(?P<date>\d{4}-\d{2}-\d{2})\b", text)
+    if not match:
+        return None
+    lowered = text.casefold()
+    if not any(token in lowered for token in ("event", "meeting", "interview", "deadline", "trip", "launch", "birthday")):
+        return None
+    date_value = match.group("date")
+    title = text.strip()[:160]
+    return {"date": date_value, "title": title, "notes": ""}

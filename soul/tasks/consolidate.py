@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from soul import db
@@ -388,6 +388,61 @@ def _clean_string_list(value: object) -> list[str]:
     return items
 
 
+def archive_and_purge_old_session_messages(
+    *,
+    database_url: str,
+    archive_dir: str | Path,
+    retention_days: int = 90,
+    now: datetime | None = None,
+) -> dict[str, int]:
+    now = now or datetime.now(timezone.utc)
+    cutoff = (now - timedelta(days=retention_days)).replace(microsecond=0).isoformat()
+    sessions = db.list_completed_sessions_with_messages_before(database_url, ended_before=cutoff)
+    archive_path = Path(archive_dir)
+    archive_path.mkdir(parents=True, exist_ok=True)
+
+    archived_sessions = 0
+    purged_messages = 0
+    failed_sessions = 0
+    for row in sessions:
+        session_id = str(row["id"])
+        messages = db.get_session_messages(database_url, session_id)
+        if not messages:
+            continue
+        payload = [
+            {
+                "session_id": session_id,
+                "started_at": row.get("started_at"),
+                "ended_at": row.get("ended_at"),
+                "role": message.get("role"),
+                "content": message.get("content"),
+                "created_at": message.get("created_at"),
+                "user_mood": message.get("user_mood"),
+                "companion_state": message.get("companion_state"),
+                "provider": message.get("provider"),
+                "metadata_json": message.get("metadata_json"),
+            }
+            for message in messages
+        ]
+        file_path = archive_path / f"{session_id}.jsonl"
+        try:
+            if not file_path.exists():
+                file_path.write_text(
+                    "\n".join(json.dumps(item, ensure_ascii=True) for item in payload) + ("\n" if payload else ""),
+                    encoding="utf-8",
+                )
+            deleted = db.delete_session_messages(database_url, session_id)
+            purged_messages += deleted
+            archived_sessions += 1
+        except Exception:
+            failed_sessions += 1
+    return {
+        "archived_sessions": archived_sessions,
+        "purged_messages": purged_messages,
+        "failed_sessions": failed_sessions,
+    }
+
+
 if celery_app is not None:
 
     @celery_app.task(name="soul.tasks.consolidate.nightly_consolidation_task")
@@ -403,4 +458,9 @@ if celery_app is not None:
             source="nightly",
             settings=settings,
         )
-        return {"sessions": results, "count": len(results)}
+        archive = archive_and_purge_old_session_messages(
+            database_url=settings.database_url,
+            archive_dir=settings.session_archive_dir,
+            retention_days=settings.raw_retention_days,
+        )
+        return {"sessions": results, "count": len(results), "archive": archive}

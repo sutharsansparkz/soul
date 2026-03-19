@@ -8,11 +8,12 @@ This repository now contains a fuller local-to-production runtime:
 - `soul chat --voice` now supports a mic-first loop: press Enter to record a turn, or type normally if you prefer. `soul chat --voice --record-seconds 5` seeds the first turn from the microphone, and `soul chat --voice-input path.wav --voice` supports file transcription plus synthesized replies when voice credentials are configured.
 - `soul db init` initializes local storage.
 - `soul memories`, `soul story`, `soul drift`, `soul milestones`, and `soul status` expose the persistence layer.
+- `soul memories search` now merges semantic episodic recall with SQL-backed manual memories, and `soul memories clear` clears all memory surfaces.
 - `soul story edit` opens the profile in your configured editor when `SOUL_EDITOR`, `VISUAL`, or `EDITOR` is set.
 - `soul telegram-bot` runs the Telegram polling surface when a bot token is configured.
 - LLM calls use Anthropic first, OpenAI second, and fall back to an offline heuristic companion response when keys are missing or unavailable.
 - Mood state can persist in Redis, episodic memory uses a local fallback plus optional Chroma, and background jobs can run through the bundled worker/beat processes or the Celery app entrypoint.
-- Maintenance now includes consolidation, resonance-based drift, proactive reach-out dispatch, and monthly reflection generation. When LLM credentials are configured, consolidation can enrich the user profile with structured goals, fears, relationships, and shared phrases from completed sessions.
+- Maintenance now includes consolidation, resonance-based drift, proactive reach-out dispatch, monthly reflection generation, and archival/purge of raw session transcripts after retention windows. When LLM credentials are configured, consolidation can enrich the user profile with structured goals, fears, relationships, and shared phrases from completed sessions.
 - `docker compose up -d app worker beat postgres redis chroma` brings up the containerized runtime.
 - `docker compose run --rm test` executes the test suite inside the image.
 

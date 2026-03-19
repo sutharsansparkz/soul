@@ -118,6 +118,12 @@ def init_db(database: Path | str) -> None:
             source TEXT DEFAULT 'nightly'
         )
         """,
+        """
+        CREATE TABLE IF NOT EXISTS session_memory_exports (
+            session_id TEXT PRIMARY KEY,
+            exported_at TEXT NOT NULL
+        )
+        """,
     ]
     with engine.begin() as connection:
         if database_url.startswith("sqlite:///"):
@@ -457,3 +463,89 @@ def is_session_consolidated(database: Path | str, session_id: str) -> bool:
             {"session_id": session_id},
         ).first()
     return row is not None
+
+
+def mark_session_memory_exported(database: Path | str, session_id: str) -> None:
+    with _get_engine(database).begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO session_memory_exports (session_id, exported_at)
+                VALUES (:session_id, :exported_at)
+                ON CONFLICT(session_id) DO UPDATE SET exported_at = excluded.exported_at
+                """
+            ),
+            {"session_id": session_id, "exported_at": utcnow_iso()},
+        )
+
+
+def is_session_memory_exported(database: Path | str, session_id: str) -> bool:
+    with connect(database) as connection:
+        row = connection.execute(
+            text("SELECT 1 FROM session_memory_exports WHERE session_id = :session_id LIMIT 1"),
+            {"session_id": session_id},
+        ).first()
+    return row is not None
+
+
+def list_completed_sessions_with_messages_before(
+    database: Path | str,
+    *,
+    ended_before: str,
+    limit: int = 500,
+) -> list[dict[str, object]]:
+    with connect(database) as connection:
+        return _fetch_dicts(
+            connection,
+            """
+            SELECT s.id, s.started_at, s.ended_at, COUNT(m.id) AS message_count
+            FROM sessions s
+            JOIN messages m ON m.session_id = s.id
+            WHERE s.ended_at IS NOT NULL
+              AND s.ended_at < :ended_before
+            GROUP BY s.id, s.started_at, s.ended_at
+            ORDER BY s.ended_at ASC
+            LIMIT :limit
+            """,
+            {"ended_before": ended_before, "limit": limit},
+        )
+
+
+def delete_session_messages(database: Path | str, session_id: str) -> int:
+    with _get_engine(database).begin() as connection:
+        result = connection.execute(
+            text("DELETE FROM messages WHERE session_id = :session_id"),
+            {"session_id": session_id},
+        )
+    return int(result.rowcount or 0)
+
+
+def list_user_message_moods_since(
+    database: Path | str,
+    *,
+    moods: tuple[str, ...],
+    since: str | None = None,
+) -> list[dict[str, object]]:
+    if not moods:
+        return []
+    mood_predicates: list[str] = []
+    params: dict[str, object] = {}
+    for index, mood in enumerate(moods):
+        key = f"mood_{index}"
+        mood_predicates.append(f"user_mood = :{key}")
+        params[key] = mood
+    where_sql = " OR ".join(mood_predicates)
+    if since is not None:
+        where_sql = f"({where_sql}) AND created_at >= :since"
+        params["since"] = since
+    with connect(database) as connection:
+        return _fetch_dicts(
+            connection,
+            f"""
+            SELECT created_at, user_mood
+            FROM messages
+            WHERE role = 'user' AND ({where_sql})
+            ORDER BY created_at DESC
+            """,
+            params,
+        )

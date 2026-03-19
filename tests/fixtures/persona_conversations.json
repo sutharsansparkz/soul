@@ -1,0 +1,194 @@
+[
+  {
+    "id": "voice-001",
+    "category": "voice_consistency",
+    "user_input": "I had a rough day and felt invisible in the meeting.",
+    "expected_user_mood": "venting",
+    "expected_companion_state": "warm",
+    "expected_reply_phrase": "that sounds rough"
+  },
+  {
+    "id": "voice-002",
+    "category": "voice_consistency",
+    "user_input": "I am stressed and under pressure about this launch.",
+    "expected_user_mood": "stressed",
+    "expected_companion_state": "concerned",
+    "expected_reply_phrase": "hear the pressure"
+  },
+  {
+    "id": "voice-003",
+    "category": "voice_consistency",
+    "user_input": "I am overwhelmed and cannot do this anymore.",
+    "expected_user_mood": "overwhelmed",
+    "expected_companion_state": "quiet",
+    "expected_reply_phrase": "sounds like a lot"
+  },
+  {
+    "id": "voice-004",
+    "category": "voice_consistency",
+    "user_input": "I won today and I am excited.",
+    "expected_user_mood": "celebrating",
+    "expected_companion_state": "playful",
+    "expected_reply_phrase": "good energy"
+  },
+  {
+    "id": "voice-005",
+    "category": "voice_consistency",
+    "user_input": "How do you think I should frame this for investors?",
+    "expected_user_mood": "curious",
+    "expected_companion_state": "curious",
+    "expected_reply_phrase": "i'm listening"
+  },
+  {
+    "id": "voice-006",
+    "category": "voice_consistency",
+    "user_input": "I keep wondering about meaning and who I am.",
+    "expected_user_mood": "reflective",
+    "expected_companion_state": "reflective",
+    "expected_reply_phrase": "late-night kind of gravity"
+  },
+  {
+    "id": "voice-007",
+    "category": "voice_consistency",
+    "user_input": "Ugh tired.",
+    "expected_user_mood": "overwhelmed",
+    "expected_companion_state": "quiet",
+    "expected_reply_phrase": "sounds like a lot"
+  },
+  {
+    "id": "voice-008",
+    "category": "voice_consistency",
+    "user_input": "Can you tell me about memory retrieval and why it matters?",
+    "expected_user_mood": "curious",
+    "expected_companion_state": "curious",
+    "expected_reply_phrase": "i'm listening"
+  },
+  {
+    "id": "emotion-001",
+    "category": "emotional_fit",
+    "user_input": "This is awful and I hate how frustrated I feel.",
+    "expected_user_mood": "venting",
+    "expected_companion_state": "warm",
+    "expected_reply_phrase": "that sounds rough"
+  },
+  {
+    "id": "emotion-002",
+    "category": "emotional_fit",
+    "user_input": "I feel worried and anxious about tomorrow.",
+    "expected_user_mood": "stressed",
+    "expected_companion_state": "concerned",
+    "expected_reply_phrase": "hear the pressure"
+  },
+  {
+    "id": "emotion-003",
+    "category": "emotional_fit",
+    "user_input": "Great news, I am thrilled and we should celebrate.",
+    "expected_user_mood": "celebrating",
+    "expected_companion_state": "playful",
+    "expected_reply_phrase": "good energy"
+  },
+  {
+    "id": "emotion-004",
+    "category": "emotional_fit",
+    "user_input": "I am wondering what growth is supposed to feel like.",
+    "expected_user_mood": "reflective",
+    "expected_companion_state": "reflective",
+    "expected_reply_phrase": "late-night kind of gravity"
+  },
+  {
+    "id": "emotion-005",
+    "category": "emotional_fit",
+    "user_input": "Tell me about how habits actually change over time?",
+    "expected_user_mood": "curious",
+    "expected_companion_state": "curious",
+    "expected_reply_phrase": "i'm listening"
+  },
+  {
+    "id": "emotion-006",
+    "category": "emotional_fit",
+    "user_input": "I cannot do this, it is too much right now.",
+    "expected_user_mood": "overwhelmed",
+    "expected_companion_state": "quiet",
+    "expected_reply_phrase": "sounds like a lot"
+  },
+  {
+    "id": "emotion-007",
+    "category": "emotional_fit",
+    "user_input": "I am happy and excited after the demo.",
+    "expected_user_mood": "celebrating",
+    "expected_companion_state": "playful",
+    "expected_reply_phrase": "good energy"
+  },
+  {
+    "id": "emotion-008",
+    "category": "emotional_fit",
+    "user_input": "Pressure is building and I am panicking a bit.",
+    "expected_user_mood": "stressed",
+    "expected_companion_state": "concerned",
+    "expected_reply_phrase": "hear the pressure"
+  },
+  {
+    "id": "continuity-001",
+    "category": "continuity",
+    "user_input": "I went for a walk today.",
+    "expected_user_mood": "neutral",
+    "expected_companion_state": "curious",
+    "expected_reply_phrase": "i'm listening"
+  },
+  {
+    "id": "continuity-002",
+    "category": "continuity",
+    "user_input": "What do you think about keeping tiny rituals?",
+    "expected_user_mood": "curious",
+    "expected_companion_state": "curious",
+    "expected_reply_phrase": "i'm listening"
+  },
+  {
+    "id": "continuity-003",
+    "category": "continuity",
+    "user_input": "Late night coding still feels like home.",
+    "expected_user_mood": "reflective",
+    "expected_companion_state": "reflective",
+    "expected_reply_phrase": "late-night kind of gravity"
+  },
+  {
+    "id": "continuity-004",
+    "category": "continuity",
+    "user_input": "I feel invisible again and I do not know what to do.",
+    "expected_user_mood": "venting",
+    "expected_companion_state": "warm",
+    "expected_reply_phrase": "that sounds rough"
+  },
+  {
+    "id": "continuity-005",
+    "category": "continuity",
+    "user_input": "I am trying to launch this startup and I am worried about runway.",
+    "expected_user_mood": "stressed",
+    "expected_companion_state": "concerned",
+    "expected_reply_phrase": "hear the pressure"
+  },
+  {
+    "id": "continuity-006",
+    "category": "continuity",
+    "user_input": "I won a small battle today and I am excited.",
+    "expected_user_mood": "celebrating",
+    "expected_companion_state": "playful",
+    "expected_reply_phrase": "good energy"
+  },
+  {
+    "id": "continuity-007",
+    "category": "continuity",
+    "user_input": "Who am I becoming through all this?",
+    "expected_user_mood": "reflective",
+    "expected_companion_state": "reflective",
+    "expected_reply_phrase": "late-night kind of gravity"
+  },
+  {
+    "id": "continuity-008",
+    "category": "continuity",
+    "user_input": "I am done, too much, and I am shutting down.",
+    "expected_user_mood": "overwhelmed",
+    "expected_companion_state": "quiet",
+    "expected_reply_phrase": "sounds like a lot"
+  }
+]
