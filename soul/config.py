@@ -2,12 +2,22 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
+
+
+def _redact_url_credentials(value: str) -> str:
+    parsed = urlsplit(value)
+    # Strip embedded credentials before printing connection URLs to avoid leaking secrets in terminal output.
+    if not parsed.netloc or "@" not in parsed.netloc:
+        return value
+    hostinfo = parsed.netloc.rsplit("@", maxsplit=1)[-1]
+    return urlunsplit((parsed.scheme, f"***redacted***@{hostinfo}", parsed.path, parsed.query, parsed.fragment))
 
 
 class Settings(BaseSettings):
@@ -134,6 +144,14 @@ class Settings(BaseSettings):
     def database_is_sqlite(self) -> bool:
         return self.database_url.startswith("sqlite:///")
 
+    @property
+    def redacted_database_url(self) -> str:
+        return _redact_url_credentials(self.database_url)
+
+    @property
+    def redacted_redis_url(self) -> str:
+        return _redact_url_credentials(self.redis_url)
+
     def as_redacted_dict(self) -> dict[str, object]:
         redacted = self.model_dump()
         for key in ("anthropic_api_key", "openai_api_key", "elevenlabs_api_key", "telegram_bot_token"):
@@ -144,7 +162,8 @@ class Settings(BaseSettings):
         redacted["personality_file"] = str(self.personality_file)
         redacted["user_story_file"] = str(self.user_story_file)
         redacted["soul_data_dir"] = str(self.soul_data_dir)
-        redacted["database_url"] = self.database_url
+        redacted["database_url"] = self.redacted_database_url
+        redacted["redis_url"] = self.redacted_redis_url
         if self.database_is_sqlite:
             redacted["sqlite_path"] = str(self.sqlite_path)
         redacted["session_archive_dir"] = str(self.session_archive_dir)

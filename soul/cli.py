@@ -690,7 +690,7 @@ def status() -> None:
     table.add_column("Field", style="magenta", width=22)
     table.add_column("Value", style="white")
     table.add_row("Companion", soul.name)
-    table.add_row("Database", settings.database_url)
+    table.add_row("Database", settings.redacted_database_url)
     table.add_row("Environment", settings.environment)
     table.add_row("Total sessions", str(total_sessions))
     table.add_row("Total messages", str(total_messages))
@@ -810,7 +810,7 @@ def db_init() -> None:
     settings = get_settings()
     _ensure_runtime_files(settings)
     db.init_db(settings.database_url)
-    console.print(f"[green]Initialized database at {settings.database_url}[/green]")
+    console.print(f"[green]Initialized database at {settings.redacted_database_url}[/green]")
 
 
 @app.command()
