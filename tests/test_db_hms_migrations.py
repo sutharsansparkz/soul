@@ -51,8 +51,11 @@ def test_init_db_migrates_legacy_hms_tables_with_defaults(tmp_path):
         inspector = inspect(connection)
         episodic_columns = {item["name"] for item in inspector.get_columns("episodic_memory")}
         score_columns = {item["name"] for item in inspector.get_columns("memory_scores")}
+        fts_exists = connection.execute(
+            text("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'memory_fts' LIMIT 1")
+        ).first()
 
-    assert {"word_count", "flagged", "ref_count", "tier", "memory_type"} <= episodic_columns
+    assert {"word_count", "flagged", "ref_count", "tier", "memory_type", "embedding"} <= episodic_columns
     assert {
         "score_emotional",
         "score_retrieval",
@@ -64,6 +67,7 @@ def test_init_db_migrates_legacy_hms_tables_with_defaults(tmp_path):
         "last_retrieved",
         "decay_rate",
     } <= score_columns
+    assert fts_exists is not None
 
     memory_row = db.get_episodic_memory(database_url, "mem-1")
     score_row = db.get_memory_score(database_url, "mem-1")
@@ -76,3 +80,6 @@ def test_init_db_migrates_legacy_hms_tables_with_defaults(tmp_path):
     assert score_row is not None
     assert float(score_row["hms_score"]) == 0.5
     assert score_row["last_computed"] is not None
+
+    fts_rows = db.search_episodic_memories_fts(database_url, "legacy", user_id="local-user", include_cold=True, limit=5)
+    assert fts_rows

@@ -53,13 +53,16 @@ In-session commands (`soul chat`):
 ## HMS retrieval contract
 
 - Candidate fetch size: `MEMORY_CANDIDATE_K` (default `20`).
+- Candidate source: SQLite FTS5 (`memory_fts`) where available.
 - Reranking formula:
   - `rank = semantic_similarity * HMS_SEMANTIC_WEIGHT + hms_score * HMS_SCORE_WEIGHT`
   - defaults: `0.55` and `0.45`.
+- Optional hybrid mode:
+  - semantic term can be composed from `bm25*0.35 + cosine*0.20` while preserving total `0.55` semantic weight.
 - Retrieval updates:
   - increment `ref_count` (`R++`)
   - recompute HMS components and tier
-  - update SQL score row + vector metadata
+  - update SQL score row + retrieval metadata
 
 ## Scheduled task interfaces
 

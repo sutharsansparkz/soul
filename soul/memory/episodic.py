@@ -6,6 +6,8 @@ from uuid import uuid4
 
 from soul import db
 from soul.config import Settings, get_settings
+from soul.memory.embedder import LocalHybridEmbedder
+from soul.memory.fts import ensure_fts_index
 from soul.memory.retriever import MemoryRetriever
 from soul.memory.scorer import boosted_components, initial_components, recompute_components
 
@@ -15,6 +17,11 @@ from .vector_store import MemoryRecord, build_vector_store
 class EpisodicMemoryRepository:
     def __init__(self, store_path: str | Path, *, settings: Settings | None = None):
         self.settings = settings or get_settings()
+        self.embedder = LocalHybridEmbedder(self.settings)
+        try:
+            ensure_fts_index(self.settings.database_url)
+        except Exception:
+            pass
         self.store = build_vector_store(store_path, settings=self.settings)
         self.retriever = MemoryRetriever(self.settings, self)
 
@@ -69,6 +76,9 @@ class EpisodicMemoryRepository:
             hms_score=components.hms_score,
             decay_rate=components.decay_rate,
         )
+        embedding_blob = self.embedder.encode_to_blob(content)
+        if embedding_blob is not None:
+            db.update_episodic_embedding(self.settings.database_url, memory_id, embedding_blob)
 
         enriched_metadata = dict(metadata)
         enriched_metadata.update(

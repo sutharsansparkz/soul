@@ -93,3 +93,23 @@ def test_retriever_filters_out_other_user_memories(tmp_path):
     ids = {str(item.metadata.get("memory_id", item.id)) for item in rows}
     assert str(own.metadata.get("memory_id", own.id)) in ids
     assert str(foreign.metadata.get("memory_id", foreign.id)) not in ids
+
+
+def test_retriever_exposes_bm25_metadata_from_sqlite_fts(tmp_path):
+    settings = _settings(tmp_path)
+    db.init_db(settings.database_url)
+    repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    repo.add_text(
+        "investor launch planning runway runway",
+        emotional_tag="stressed",
+        metadata={"session_id": "s1", "user_id": settings.user_id, "timestamp": "2026-03-18T10:00:00+00:00"},
+    )
+    rows = MemoryRetriever(settings, repo).retrieve(
+        query="launch runway",
+        user_id=settings.user_id,
+        k=1,
+        passive=True,
+    )
+    assert rows
+    assert "bm25_score" in rows[0].metadata
+    assert "bm25_similarity" in rows[0].metadata

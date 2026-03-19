@@ -4,19 +4,21 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from soul import db
-from soul.memory.episodic import EpisodicMemoryRepository
+from soul.memory.embedder import LocalHybridEmbedder
 from soul.memory.scorer import initial_components, recompute_components
 from soul.memory.vector_store import MemoryRecord
 
 
 if TYPE_CHECKING:
     from soul.config import Settings
+    from soul.memory.episodic import EpisodicMemoryRepository
 
 
 class MemoryRetriever:
-    def __init__(self, settings: "Settings", repository: EpisodicMemoryRepository):
+    def __init__(self, settings: "Settings", repository: "EpisodicMemoryRepository"):
         self.settings = settings
         self.repository = repository
+        self.embedder = getattr(repository, "embedder", LocalHybridEmbedder(settings))
 
     def retrieve(
         self,
@@ -33,15 +35,33 @@ class MemoryRetriever:
         half_life_days = float(getattr(self.settings, "hms_decay_halflife_days", 30.0))
         cold_threshold = float(getattr(self.settings, "hms_cold_threshold", 0.05))
 
-        candidates = self.repository.store.search(
+        fts_rows = db.search_episodic_memories_fts(
+            self.settings.database_url,
             query,
-            limit=candidate_k,
             user_id=user_id,
-            min_hms_score=(cold_threshold if passive else None),
-            exclude_tiers=({"cold"} if passive else None),
+            include_cold=not passive,
+            limit=candidate_k,
         )
+        bm25_similarity = self._normalize_bm25_rows(fts_rows)
+        query_embedding = self.embedder.encode(query) if self.embedder.status.enabled else None
+
+        candidates: list[tuple[MemoryRecord, dict[str, object] | None]] = []
+        for row in fts_rows:
+            record = self._record_from_row(row)
+            candidates.append((record, row))
+
+        if not candidates:
+            fallback = self.repository.store.search(
+                query,
+                limit=candidate_k,
+                user_id=user_id,
+                min_hms_score=(cold_threshold if passive else None),
+                exclude_tiers=({"cold"} if passive else None),
+            )
+            candidates.extend((record, None) for record in fallback)
+
         ranked: list[tuple[float, MemoryRecord, str]] = []
-        for record in candidates:
+        for record, row_hint in candidates:
             memory_id = self._resolve_memory_id(record)
             row = db.get_episodic_memory(self.settings.database_url, memory_id)
             if row is None:
@@ -66,7 +86,20 @@ class MemoryRetriever:
             if passive and tier == "cold":
                 continue
 
-            semantic_similarity = self._semantic_similarity(query, record.content, record=record)
+            if row_hint is not None:
+                bm25_score = float(row_hint.get("bm25_score", 0.0))
+                bm25_component = bm25_similarity.get(memory_id, 0.0)
+                semantic_similarity = bm25_component
+                record.metadata["bm25_score"] = f"{bm25_score:.4f}"
+                record.metadata["bm25_similarity"] = f"{bm25_component:.4f}"
+
+                candidate_embedding = self.embedder.decode_blob(row_hint.get("embedding"))
+                cosine = self.embedder.cosine_similarity(query_embedding, candidate_embedding)
+                if query_embedding is not None and candidate_embedding is not None:
+                    semantic_similarity = ((bm25_component * 0.35) + (cosine * 0.20)) / 0.55
+                    record.metadata["cosine_similarity"] = f"{cosine:.4f}"
+            else:
+                semantic_similarity = self._semantic_similarity(query, record.content, record=record)
             hms_score = float(score_row.get("hms_score", 0.5))
             retrieval_rank = (semantic_similarity * semantic_weight) + (hms_score * hms_weight)
 
@@ -230,3 +263,47 @@ class MemoryRetriever:
         overlap_score = overlap / max(1, len(query_tokens))
         substring_boost = 0.35 if query.casefold() in content.casefold() else 0.0
         return min(1.0, overlap_score + substring_boost)
+
+    def _normalize_bm25_rows(self, rows: list[dict[str, object]]) -> dict[str, float]:
+        scored: list[tuple[str, float]] = []
+        for row in rows:
+            memory_id = str(row.get("id", ""))
+            if not memory_id:
+                continue
+            try:
+                score = float(row.get("bm25_score", 0.0))
+            except (TypeError, ValueError):
+                continue
+            scored.append((memory_id, score))
+        if not scored:
+            return {}
+        values = [item[1] for item in scored]
+        lowest = min(values)
+        highest = max(values)
+        if highest <= lowest:
+            return {memory_id: 1.0 for memory_id, _ in scored}
+        output: dict[str, float] = {}
+        scale = highest - lowest
+        for memory_id, value in scored:
+            output[memory_id] = max(0.0, min(1.0, 1.0 - ((value - lowest) / scale)))
+        return output
+
+    def _record_from_row(self, row: dict[str, object]) -> MemoryRecord:
+        memory_id = str(row.get("id", ""))
+        return MemoryRecord(
+            id=memory_id,
+            content=str(row.get("content", "")),
+            emotional_tag=str(row.get("emotional_tag") or "") or None,
+            memory_type=str(row.get("memory_type", "moment")),
+            ref_count=int(row.get("ref_count") or 0),
+            importance=float(row.get("hms_score", 0.5)),
+            metadata={
+                "memory_id": memory_id,
+                "session_id": str(row.get("session_id", "")),
+                "user_id": str(row.get("user_id", "")),
+                "timestamp": str(row.get("timestamp", "")),
+                "tier": str(row.get("tier", "present")),
+                "hms_score": round(float(row.get("hms_score", 0.5)), 4),
+                "flagged": int(row.get("flagged") or 0),
+            },
+        )

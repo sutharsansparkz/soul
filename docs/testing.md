@@ -22,6 +22,7 @@ The current suite focuses on:
 - CLI command surface
 - persona regression fixtures (20+ deterministic conversation turns)
 - HMS scoring formula, retriever reranking, and nightly decay idempotency
+- SQLite FTS schema/search contracts and legacy migration compatibility
 - unified memory search/clear CLI contracts and retrieval update behavior
 - consolidation retention safety and settings-aware persistence behavior
 

@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     llm_model: str = Field(default="claude-sonnet-4-6", alias="LLM_MODEL")
     fallback_llm_model: str = Field(default="gpt-4o", alias="FALLBACK_LLM_MODEL")
     embedding_model: str = Field(default="text-embedding-3-small", alias="EMBEDDING_MODEL")
+    hybrid_embeddings: bool = Field(default=False, alias="HYBRID_EMBEDDINGS")
+    hybrid_model: str = Field(default="all-MiniLM-L6-v2", alias="HYBRID_MODEL")
     memory_retrieval_k: int = Field(default=5, alias="MEMORY_RETRIEVAL_K")
     memory_candidate_k: int = Field(default=20, alias="MEMORY_CANDIDATE_K")
     hms_semantic_weight: float = Field(default=0.55, alias="HMS_SEMANTIC_WEIGHT")

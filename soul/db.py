@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -157,11 +158,14 @@ def init_db(database: Path | str) -> None:
         """,
     ]
     with engine.begin() as connection:
-        if database_url.startswith("sqlite:///"):
+        is_sqlite = database_url.startswith("sqlite:///")
+        if is_sqlite:
             connection.exec_driver_sql("PRAGMA journal_mode = WAL;")
         for statement in statements:
             connection.exec_driver_sql(statement)
         _migrate_hms_schema(connection)
+        if is_sqlite:
+            _ensure_memory_fts_schema(connection)
         connection.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS idx_memory_scores_user_score ON memory_scores(user_id, hms_score DESC)"
         )
@@ -184,6 +188,7 @@ def _migrate_hms_schema(connection: Connection) -> None:
                 "ref_count": "INTEGER DEFAULT 0",
                 "tier": "TEXT DEFAULT 'present'",
                 "memory_type": "TEXT DEFAULT 'moment'",
+                "embedding": "BLOB DEFAULT NULL",
             },
         )
         connection.execute(
@@ -246,6 +251,52 @@ def _ensure_columns(
         if column_name in existing:
             continue
         connection.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
+
+
+def _ensure_memory_fts_schema(connection: Connection) -> None:
+    exists = connection.execute(
+        text("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'memory_fts' LIMIT 1")
+    ).first()
+    connection.exec_driver_sql(
+        """
+        CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
+            content,
+            emotional_tag,
+            memory_type,
+            content=episodic_memory,
+            content_rowid=rowid,
+            tokenize='porter unicode61'
+        )
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER IF NOT EXISTS mem_ai AFTER INSERT ON episodic_memory BEGIN
+            INSERT INTO memory_fts(rowid, content, emotional_tag, memory_type)
+            VALUES (new.rowid, new.content, new.emotional_tag, new.memory_type);
+        END;
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER IF NOT EXISTS mem_au AFTER UPDATE ON episodic_memory BEGIN
+            INSERT INTO memory_fts(memory_fts, rowid, content, emotional_tag, memory_type)
+            VALUES ('delete', old.rowid, old.content, old.emotional_tag, old.memory_type);
+            INSERT INTO memory_fts(rowid, content, emotional_tag, memory_type)
+            VALUES (new.rowid, new.content, new.emotional_tag, new.memory_type);
+        END;
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        CREATE TRIGGER IF NOT EXISTS mem_ad AFTER DELETE ON episodic_memory BEGIN
+            INSERT INTO memory_fts(memory_fts, rowid, content, emotional_tag, memory_type)
+            VALUES ('delete', old.rowid, old.content, old.emotional_tag, old.memory_type);
+        END;
+        """
+    )
+    if not exists:
+        connection.exec_driver_sql("INSERT INTO memory_fts(memory_fts) VALUES('rebuild')")
 
 
 def create_session(database: Path | str, companion_name: str, session_id: str | None = None) -> str:
@@ -486,7 +537,7 @@ def get_episodic_memory(database: Path | str, memory_id: str) -> dict[str, objec
             text(
                 """
                 SELECT id, user_id, session_id, timestamp, content, emotional_tag, memory_type,
-                       word_count, flagged, ref_count, tier
+                       word_count, flagged, ref_count, tier, embedding
                 FROM episodic_memory
                 WHERE id = :memory_id
                 LIMIT 1
@@ -517,7 +568,7 @@ def list_episodic_memories(
             connection,
             f"""
             SELECT id, user_id, session_id, timestamp, content, emotional_tag, memory_type,
-                   word_count, flagged, ref_count, tier
+                   word_count, flagged, ref_count, tier, embedding
             FROM episodic_memory
             {where_sql}
             ORDER BY timestamp DESC
@@ -547,7 +598,7 @@ def search_episodic_memories(
             connection,
             f"""
             SELECT em.id, em.user_id, em.session_id, em.timestamp, em.content, em.emotional_tag, em.memory_type,
-                   em.word_count, em.flagged, em.ref_count, em.tier, COALESCE(ms.hms_score, 0.5) AS hms_score
+                   em.word_count, em.flagged, em.ref_count, em.tier, em.embedding, COALESCE(ms.hms_score, 0.5) AS hms_score
             FROM episodic_memory em
             LEFT JOIN memory_scores ms ON ms.memory_id = em.id
             WHERE {' AND '.join(predicates)}
@@ -578,7 +629,7 @@ def list_top_episodic_memories(
             connection,
             f"""
             SELECT em.id, em.user_id, em.session_id, em.timestamp, em.content, em.emotional_tag, em.memory_type,
-                   em.word_count, em.flagged, em.ref_count, em.tier,
+                   em.word_count, em.flagged, em.ref_count, em.tier, em.embedding,
                    COALESCE(ms.score_emotional, 0.5) AS score_emotional,
                    COALESCE(ms.score_retrieval, 0.0) AS score_retrieval,
                    COALESCE(ms.score_temporal, 1.0) AS score_temporal,
@@ -613,7 +664,7 @@ def list_cold_memories(
             connection,
             f"""
             SELECT em.id, em.user_id, em.session_id, em.timestamp, em.content, em.emotional_tag, em.memory_type,
-                   em.word_count, em.flagged, em.ref_count, em.tier, COALESCE(ms.hms_score, 0.5) AS hms_score
+                   em.word_count, em.flagged, em.ref_count, em.tier, em.embedding, COALESCE(ms.hms_score, 0.5) AS hms_score
             FROM episodic_memory em
             LEFT JOIN memory_scores ms ON ms.memory_id = em.id
             WHERE {' AND '.join(predicates)}
@@ -655,6 +706,14 @@ def update_episodic_memory_fields(
                 """
             ),
             params,
+        )
+
+
+def update_episodic_embedding(database: Path | str, memory_id: str, embedding: bytes | None) -> None:
+    with _get_engine(database).begin() as connection:
+        connection.execute(
+            text("UPDATE episodic_memory SET embedding = :embedding WHERE id = :memory_id"),
+            {"embedding": embedding, "memory_id": memory_id},
         )
 
 
@@ -744,6 +803,7 @@ def list_memory_scores_for_decay(database: Path | str, *, user_id: str | None = 
             f"""
             SELECT em.id, em.user_id, em.session_id, em.timestamp, em.content, em.emotional_tag, em.memory_type,
                    em.word_count, em.flagged, em.ref_count, em.tier,
+                   em.embedding,
                    COALESCE(ms.score_emotional, 0.5) AS score_emotional,
                    COALESCE(ms.score_retrieval, 0.0) AS score_retrieval,
                    COALESCE(ms.score_temporal, 1.0) AS score_temporal,
@@ -760,6 +820,89 @@ def list_memory_scores_for_decay(database: Path | str, *, user_id: str | None = 
             """,
             params,
         )
+
+
+def search_episodic_memories_fts(
+    database: Path | str,
+    query: str,
+    *,
+    user_id: str | None = None,
+    include_cold: bool = True,
+    limit: int = 20,
+) -> list[dict[str, object]]:
+    database_url = _normalize_database(database)
+    if not database_url.startswith("sqlite:///"):
+        return search_episodic_memories(
+            database,
+            query,
+            user_id=user_id,
+            include_cold=include_cold,
+            limit=limit,
+        )
+
+    fts_query = _to_fts_query(query)
+    if not fts_query:
+        return []
+
+    predicates: list[str] = ["memory_fts MATCH :fts_query"]
+    params: dict[str, object] = {"fts_query": fts_query, "limit": limit}
+    if user_id is not None:
+        predicates.append("em.user_id = :user_id")
+        params["user_id"] = user_id
+    if not include_cold:
+        predicates.append("em.tier != 'cold'")
+
+    with connect(database) as connection:
+        try:
+            return _fetch_dicts(
+                connection,
+                f"""
+                SELECT em.id, em.user_id, em.session_id, em.timestamp, em.content, em.emotional_tag, em.memory_type,
+                       em.word_count, em.flagged, em.ref_count, em.tier, em.embedding,
+                       COALESCE(ms.hms_score, 0.5) AS hms_score,
+                       bm25(memory_fts) AS bm25_score
+                FROM memory_fts
+                JOIN episodic_memory em ON em.rowid = memory_fts.rowid
+                LEFT JOIN memory_scores ms ON ms.memory_id = em.id
+                WHERE {' AND '.join(predicates)}
+                ORDER BY bm25(memory_fts) ASC, em.timestamp DESC
+                LIMIT :limit
+                """,
+                params,
+            )
+        except Exception:
+            return search_episodic_memories(
+                database,
+                query,
+                user_id=user_id,
+                include_cold=include_cold,
+                limit=limit,
+            )
+
+
+def rebuild_memory_fts(database: Path | str) -> None:
+    database_url = _normalize_database(database)
+    if not database_url.startswith("sqlite:///"):
+        return
+    with _get_engine(database).begin() as connection:
+        _ensure_memory_fts_schema(connection)
+        connection.exec_driver_sql("INSERT INTO memory_fts(memory_fts) VALUES('rebuild')")
+
+
+def ensure_memory_fts(database: Path | str) -> None:
+    database_url = _normalize_database(database)
+    if not database_url.startswith("sqlite:///"):
+        return
+    with _get_engine(database).begin() as connection:
+        _ensure_memory_fts_schema(connection)
+
+
+def _to_fts_query(query: str) -> str:
+    tokens = [re.sub(r"[^\w]+", "", token).strip() for token in query.split()]
+    cleaned = [token for token in tokens if token]
+    if not cleaned:
+        return ""
+    return " OR ".join(f'"{token}"' for token in cleaned[:20])
 
 
 def delete_episodic_memories(database: Path | str) -> int:

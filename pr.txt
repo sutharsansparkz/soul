@@ -150,12 +150,20 @@ The soul is stored as `soul_data/soul.yaml` and compiled into an immutable syste
 
 
 Storage:
-┌────────────┐  ┌──────────────┐  ┌──────────────┐
-│ PostgreSQL  │  │   Chroma DB  │  │  Local files  │
-│ user story  │  │ episodic mem │  │  soul.yaml    │
-│ milestones  │  │ + HMS scores │  │  personality  │
-│ score log   │  │   metadata   │  │  ~/.soul/     │
-└────────────┘  └──────────────┘  └──────────────┘
+┌──────────────────────────────────┐  ┌──────────────┐
+│         SQLite (single file)      │  │  Local files  │
+│  · episodic_memory + FTS5 index  │  │  soul.yaml    │
+│  · memory_scores (HMS)           │  │  personality  │
+│  · user_story, milestones        │  │  ~/.soul/     │
+│  · drift_log, sessions           │  │              │
+└──────────────────────────────────┘  └──────────────┘
+
+Optional hybrid upgrade (no new infra):
+┌──────────────────────────────────┐
+│  SQLite + local sentence-transf. │
+│  · embeddings as BLOB column     │
+│  · BM25 × 0.55 + cosine × 0.45  │
+└──────────────────────────────────┘
 ```
 
 ---
@@ -169,17 +177,18 @@ Storage:
 | LLM fallback | GPT-4o | Redundancy / cost control |
 | Orchestration | Custom agent loop (pure Python) | Context assembly, tool routing |
 | **Task queue** | Celery + Redis | Background jobs (drift, consolidation) |
-| **Primary DB** | SQLite (dev) / PostgreSQL (prod) | User story, milestones, drift log |
-| **Vector DB** | Chroma DB | Episodic memory, semantic search |
+| **Database** | SQLite (single file, always) | Everything — memory, story, scores, drift log |
+| **Full-text search** | SQLite FTS5 + BM25 | Memory retrieval — zero extra infrastructure |
+| **HMS score store** | SQLite `memory_scores` table | Score columns, indexed for fast ranked retrieval |
 | Session cache | Redis | Companion mood state, active session |
-| **Embeddings** | OpenAI text-embedding-3-small | Memory encoding |
 | **Mood detection** | HuggingFace cardiffnlp/roberta | Input emotional tagging |
 | STT (optional) | Whisper (local) | Voice input from mic |
 | TTS (optional) | ElevenLabs | Companion speaks back via terminal |
 | Telegram (optional) | python-telegram-bot | Access from phone |
+| **Hybrid upgrade** | sentence-transformers (local) | Semantic embeddings as BLOB in SQLite — no new service |
 | Config | Pydantic Settings + `.env` | Environment management |
 
-No web server. No frontend build step. No browser. Just Python.
+No web server. No frontend. No vector database process. Everything lives in one SQLite file.
 
 ---
 
@@ -199,10 +208,11 @@ soul/
 │   │   └── post_processor.py    # Tags memories, detects milestones
 │   │
 │   ├── memory/
-│   │   ├── vector_store.py      # Chroma interface — embed, store, retrieve
+│   │   ├── fts.py               # SQLite FTS5 index management — write, rebuild, query
 │   │   ├── episodic.py          # Write + retrieve episodic memories
 │   │   ├── scorer.py            # Human Memory Scoring — score, decay, boost
-│   │   ├── retriever.py         # Score-weighted retrieval logic
+│   │   ├── retriever.py         # BM25 + HMS reranking (+ optional cosine blend)
+│   │   ├── embedder.py          # Optional: local sentence-transformers embeddings
 │   │   ├── user_story.py        # Structured user profile management
 │   │   └── shared_language.py   # Inside jokes, recurring references
 │   │
@@ -237,7 +247,7 @@ soul/
 ├── pyproject.toml               # Package + CLI entry point definition
 ├── requirements.txt
 ├── .env.example
-├── docker-compose.yml           # Redis + Chroma for dev; + Postgres for prod
+├── docker-compose.yml           # Redis only (SQLite is a local file, no DB container needed)
 └── README.md
 ```
 
@@ -279,13 +289,13 @@ where:
 ```
 Memory created
   → initial score computed from E + T + F + U (R = 0 at birth)
-  → stored in PostgreSQL memory_scores table
-  → score written as metadata field in Chroma
+  → stored in SQLite memory_scores table
+  → score written to memory_scores table in SQLite
 
 Every retrieval
   → R increments by +1
   → score recomputed: slight boost from higher R
-  → updated in both PostgreSQL + Chroma metadata
+  → UPDATE memory_scores SET ref_count++, hms_score=? in SQLite
 
 Nightly decay job (2am Celery task)
   → T recomputed for every memory based on age
@@ -306,18 +316,34 @@ During context assembly, the retriever blends two signals:
 # soul/memory/retriever.py
 
 def retrieve(query: str, user_id: str, k: int = 5) -> list[Memory]:
-    # Step 1: semantic similarity search in Chroma
-    candidates = vector_store.search(query, user_id, k=20)
+    # Step 1: BM25 full-text search — SQLite FTS5, built-in, zero infrastructure
+    candidates = db.execute("""
+        SELECT m.*, ms.hms_score,
+               bm25(memory_fts) AS bm25_score
+        FROM memory_fts
+        JOIN episodic_memory m USING (id)
+        JOIN memory_scores ms USING (id)
+        WHERE memory_fts MATCH ? AND m.user_id = ?
+        ORDER BY bm25_score
+        LIMIT 20
+    """, [query, user_id]).fetchall()
 
-    # Step 2: rerank by composite score
+    # Step 2: rerank by composite score (BM25 relevance + HMS importance)
+    max_bm25 = max((abs(m.bm25_score) for m in candidates), default=1)
     for mem in candidates:
+        norm_bm25 = abs(mem.bm25_score) / max_bm25   # BM25 returns negative in SQLite
         mem.retrieval_rank = (
-            mem.semantic_similarity * 0.55 +   # relevance to current message
-            mem.hms_score         * 0.45        # importance / vividness
+            norm_bm25       * 0.55 +   # keyword relevance to current message
+            mem.hms_score   * 0.45     # importance / vividness / emotional weight
         )
 
-    # Step 3: return top-k after reranking
-    return sorted(candidates, key=lambda m: m.retrieval_rank, reverse=True)[:k]
+    # Step 3: return top-k, boost retrieval count (feeds R signal)
+    results = sorted(candidates, key=lambda m: m.retrieval_rank, reverse=True)[:k]
+    db.executemany(
+        "UPDATE memory_scores SET ref_count = ref_count + 1 WHERE memory_id = ?",
+        [(m.id,) for m in results]
+    )
+    return results
 ```
 
 A highly emotional memory from 6 months ago will still surface if it's relevant — because its high `E` and accumulated `R` keep its score alive. A trivial remark from yesterday fades quickly. This mimics human memory: we don't remember everything equally, we remember what mattered.
@@ -419,12 +445,13 @@ $ soul chat
 **Goal:** The companion truly knows you across sessions. It not only remembers — it remembers the *right* things, with the right weight, the way a real person would.
 
 **Tasks:**
-- [ ] Set up Chroma DB (runs locally)
-- [ ] `episodic.py` — embeds + stores conversation chunks after each session ends
+- [ ] Enable SQLite FTS5 virtual table on `episodic_memory` — zero extra infrastructure
+- [ ] `fts.py` — creates + manages FTS5 index, handles tokenization and index rebuilds
+- [ ] `episodic.py` — writes conversation chunks to SQLite + updates FTS5 index after each session
 - [ ] `scorer.py` — computes initial HMS score on memory creation; exposes `boost()`, `decay()`, `recompute()`
-- [ ] `retriever.py` — blends semantic similarity (55%) + HMS score (45%) for ranked retrieval
+- [ ] `retriever.py` — BM25 full-text search (top 20 candidates) reranked by HMS score (top 5 returned)
 - [ ] Nightly decay Celery task — recomputes `T` component for all memories, moves sub-0.05 to cold tier
-- [ ] `vector_store.py` — stores HMS score as Chroma metadata field; supports score-filtered queries
+- [ ] `embedder.py` — *optional* local `sentence-transformers` model, stores embeddings as BLOB column in SQLite
 - [ ] Design + implement `user_story.json` schema (see Data Models)
 - [ ] `user_story.py` — LLM extracts story updates from raw chat and writes to profile
 - [ ] `shared_language.py` — tracks recurring phrases, nicknames, references
@@ -437,12 +464,15 @@ $ soul chat
 **Memory retrieval flow:**
 ```
 User message
-  → embed (text-embedding-3-small)
-  → search Chroma (top 20 candidates)
-  → rerank: semantic_sim × 0.55 + hms_score × 0.45
+  → SQLite FTS5 BM25 search (top 20 candidates, instant — no API call)
+  → rerank: normalize(bm25_score) × 0.55 + hms_score × 0.45
   → inject top 5 as [memory: ...] blocks into LLM context
-  → on inject: R++ → score boost → update Chroma metadata
+  → on inject: R++ → score boost → UPDATE memory_scores SET ref_count++
   → LLM responds as if it simply remembers
+
+Optional hybrid mode (if embedder.py enabled):
+  → also compute cosine_similarity from BLOB column
+  → rerank: bm25 × 0.35 + cosine × 0.20 + hms_score × 0.45
 ```
 
 **Nightly consolidation (2am, Celery beat):**
@@ -450,7 +480,8 @@ User message
 Load today's raw session messages
   → LLM extracts key facts, emotional moments, story updates
   → Score each extracted memory (HMS initial score)
-  → Write memories + scores to Chroma and PostgreSQL
+  → INSERT into episodic_memory + memory_scores (SQLite)
+  → FTS5 index auto-updated via trigger
   → Recompute T (temporal decay) for ALL existing memories
   → Memories below 0.05 → move to cold tier
   → Update user_story.json profile
@@ -609,19 +640,39 @@ worldview:
 
 ```sql
 CREATE TABLE episodic_memory (
-  id            UUID PRIMARY KEY,
-  user_id       UUID NOT NULL,
-  session_id    UUID NOT NULL,
-  timestamp     TIMESTAMPTZ NOT NULL,
+  id            TEXT PRIMARY KEY,   -- UUID as text (SQLite)
+  user_id       TEXT NOT NULL,
+  session_id    TEXT NOT NULL,
+  timestamp     TEXT NOT NULL,      -- ISO8601
   content       TEXT NOT NULL,
-  emotional_tag VARCHAR(32),
-  memory_type   VARCHAR(32),     -- moment | insight | joke | milestone
-  word_count    INT DEFAULT 0,   -- proxy for user speech volume (U signal)
-  flagged       BOOLEAN DEFAULT FALSE,
-  ref_count     INT DEFAULT 0,   -- incremented on every retrieval (R signal)
-  tier          VARCHAR(16) DEFAULT 'present'  -- vivid | present | fading | cold
+  emotional_tag TEXT,
+  memory_type   TEXT,               -- moment | insight | joke | milestone
+  word_count    INT DEFAULT 0,      -- proxy for user speech volume (U signal)
+  flagged       INT DEFAULT 0,      -- boolean as int (SQLite)
+  ref_count     INT DEFAULT 0,      -- incremented on every retrieval (R signal)
+  tier          TEXT DEFAULT 'present', -- vivid | present | fading | cold
+  embedding     BLOB DEFAULT NULL   -- optional: local sentence-transformers vector
 );
--- Embeddings + HMS score stored in Chroma metadata, keyed by this id
+
+-- FTS5 virtual table — zero extra infra, auto-maintained via triggers
+CREATE VIRTUAL TABLE memory_fts USING fts5(
+  content,
+  emotional_tag,
+  memory_type,
+  content=episodic_memory,
+  content_rowid=rowid,
+  tokenize='porter unicode61'
+);
+
+-- Triggers to keep FTS5 index in sync
+CREATE TRIGGER mem_ai AFTER INSERT ON episodic_memory BEGIN
+  INSERT INTO memory_fts(rowid, content, emotional_tag, memory_type)
+  VALUES (new.rowid, new.content, new.emotional_tag, new.memory_type);
+END;
+CREATE TRIGGER mem_ad AFTER DELETE ON episodic_memory BEGIN
+  INSERT INTO memory_fts(memory_fts, rowid, content, emotional_tag, memory_type)
+  VALUES ('delete', old.rowid, old.content, old.emotional_tag, old.memory_type);
+END;
 ```
 
 ### `memory_scores` table
@@ -725,9 +776,10 @@ DATABASE_URL=sqlite:///./soul_data/db/soul.db
 # Redis
 REDIS_URL=redis://localhost:6379
 
-# Chroma
-CHROMA_PATH=./soul_data/chroma  # local (dev)
-# CHROMA_HOST=localhost          # remote (prod)
+# Memory search (SQLite FTS5 — no config needed, built-in)
+# Optional hybrid upgrade: set to enable local sentence-transformers embeddings
+HYBRID_EMBEDDINGS=false
+HYBRID_MODEL=all-MiniLM-L6-v2   # runs locally, no API key needed
 
 # Voice (optional)
 ELEVENLABS_API_KEY=
@@ -738,9 +790,9 @@ TELEGRAM_BOT_TOKEN=
 
 # Behaviour
 LLM_MODEL=claude-sonnet-4-6
-EMBEDDING_MODEL=text-embedding-3-small
+# HYBRID_MODEL embedding is handled locally — no OpenAI key needed for memory
 MEMORY_RETRIEVAL_K=5
-MEMORY_CANDIDATE_K=20           # candidates before HMS reranking
+MEMORY_CANDIDATE_K=20           # BM25 candidates before HMS reranking
 HMS_SEMANTIC_WEIGHT=0.55        # weight for semantic similarity in retrieval blend
 HMS_SCORE_WEIGHT=0.45           # weight for HMS score in retrieval blend
 HMS_DECAY_HALFLIFE_DAYS=30      # temporal decay half-life
@@ -760,8 +812,8 @@ cd soul
 python -m venv venv && source venv/bin/activate
 pip install -e .
 
-# 2. Start infrastructure (Redis + Chroma)
-docker-compose up -d
+# 2. Start infrastructure (Redis only — SQLite is just a local file)
+docker-compose up -d redis
 
 # 3. Configure
 cp .env.example .env
@@ -798,9 +850,9 @@ celery -A soul.tasks beat --loglevel=info     # triggers nightly / weekly jobs
 
 **5. Memory consolidation is nightly, not real-time.** Real-time updates create noise. The nightly pass lets the system synthesize a session with distance — similar to how humans consolidate memory during sleep.
 
-**7. Memory is scored, not equal.** The Human Memory Scoring System (HMS) assigns every stored memory a living composite score based on emotional intensity, how often it's been recalled, recency, whether it was flagged, and how much the user said about it. Retrieval blends semantic similarity with HMS score — so a vivid emotional memory from months ago will still surface when relevant, while a trivial remark from yesterday fades away. This is how human memory actually works.
+**8. Memory is scored, not equal.** The Human Memory Scoring System (HMS) assigns every stored memory a living composite score based on emotional intensity, how often it's been recalled, recency, whether it was flagged, and how much the user said about it. Retrieval blends semantic similarity with HMS score — so a vivid emotional memory from months ago will still surface when relevant, while a trivial remark from yesterday fades away. This is how human memory actually works.
 
-**8. Memories decay but are never deleted.** Cold memories (score below 0.05) are moved to a cold tier — they won't surface passively, but they're never erased. The user can always search for them explicitly. Permanent deletion requires a deliberate `soul memories clear` command with confirmation. No infrastructure required to get started. `soul chat` works immediately after install.
+**9. Memories decay but are never deleted.** Cold memories (score below 0.05) are moved to a cold tier — they won't surface passively, but they're never erased. The user can always search for them explicitly. Permanent deletion requires a deliberate `soul memories clear` command with confirmation. No infrastructure required to get started. `soul chat` works immediately after install.
 
 ---
 

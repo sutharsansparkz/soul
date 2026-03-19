@@ -235,8 +235,10 @@ def _handle_session_command(
                 "source": "manual_save",
             },
         )
+        memory_id = str(saved.metadata.get("memory_id", saved.id))
+        boosted = episodic_repo.boost(memory_id)
         db.save_memory(settings.database_url, label="manual note", content=note, session_id=session_id, importance=0.9)
-        score = float(saved.metadata.get("hms_score", 0.5))
+        score = float(boosted["hms_score"]) if boosted and "hms_score" in boosted else float(saved.metadata.get("hms_score", 0.5))
         console.print(f"[green]Saved and boosted memory.[/green] HMS={score:.2f}")
         return False, voice_enabled
 

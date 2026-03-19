@@ -5,12 +5,16 @@ from soul.config import Settings
 
 def test_hms_config_knobs_are_exposed():
     settings = Settings(
+        hybrid_embeddings=True,
+        hybrid_model="all-MiniLM-L6-v2",
         memory_candidate_k=25,
         hms_semantic_weight=0.6,
         hms_score_weight=0.4,
         hms_decay_halflife_days=45,
         hms_cold_threshold=0.07,
     )
+    assert settings.hybrid_embeddings is True
+    assert settings.hybrid_model == "all-MiniLM-L6-v2"
     assert settings.memory_candidate_k == 25
     assert settings.hms_semantic_weight == 0.6
     assert settings.hms_score_weight == 0.4

@@ -16,7 +16,7 @@ SOUL is a terminal-first companion system with four runtime layers:
    - mood tags
    - immutable soul prompt
    - story summary
-   - memory snippets (retrieved via semantic top-20 candidates reranked by HMS)
+   - memory snippets (retrieved via SQLite FTS5 top-20 candidates reranked by HMS)
 4. Stream assistant reply with Rich live rendering.
 5. Persist turn and run post-processing:
    - story updates
@@ -30,13 +30,14 @@ SOUL is a terminal-first companion system with four runtime layers:
   - `memories` (legacy/manual notes)
   - `episodic_memory` (durable episodic entries)
   - `memory_scores` (HMS components + composite)
-- Vector layer:
-  - local JSONL vector fallback
-  - optional Chroma (hybrid mode)
+- Search layer:
+  - SQLite FTS5 virtual table (`memory_fts`) + triggers on `episodic_memory`
+  - optional local sentence-transformers cosine signal from `episodic_memory.embedding` BLOB
 - Retrieval blend:
   - `final_rank = semantic_similarity * 0.55 + hms_score * 0.45`
+  - optional hybrid mode: `(bm25*0.35 + cosine*0.20) + hms*0.45`
   - passive retrieval excludes `cold` tier
-  - retrieval updates `R` (`ref_count`), recomputes HMS, syncs SQL/vector metadata
+  - retrieval updates `R` (`ref_count`), recomputes HMS, and updates retrieval metadata
 
 ## Background jobs
 
@@ -48,6 +49,6 @@ SOUL is a terminal-first companion system with four runtime layers:
 
 ## Storage and compatibility
 
-- DB is initialized via `db.init_db()` with additive table/index creation.
+- DB is initialized via `db.init_db()` with additive table/index creation plus FTS5 trigger/index setup.
 - Legacy records remain supported via backfill on retrieval (missing SQL score rows are created lazily).
 - Cold memories are retained and searchable; passive context injection excludes them.

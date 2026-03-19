@@ -31,6 +31,13 @@ Database bootstrap also performs additive HMS column migrations for legacy SQLit
 - `flagged`
 - `ref_count`
 - `tier` (`vivid|present|fading|cold`)
+- `embedding` (`BLOB`, optional local sentence-transformers vector)
+
+## `memory_fts` virtual table (SQLite FTS5)
+
+- indexed fields: `content`, `emotional_tag`, `memory_type`
+- linked to `episodic_memory` via `content_rowid`
+- maintained by insert/update/delete triggers
 
 ## `memory_scores` table
 
@@ -58,7 +65,7 @@ Retrieval-time update contract:
 
 - increment `ref_count` (`R++`)
 - recompute HMS composite + tier
-- persist score/tier metadata to SQL + vector store
+- persist score/tier metadata to SQL storage
 
 ## `drift_log` table
 
