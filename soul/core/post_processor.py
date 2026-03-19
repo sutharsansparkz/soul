@@ -52,15 +52,19 @@ class PostProcessor:
             )
 
     def process_session_end(self, *, session_id: str) -> None:
-        if db.is_session_memory_exported(self.settings.database_url, session_id):
-            return
         rows = db.get_session_messages(self.settings.database_url, session_id)
         user_rows = [row for row in rows if str(row.get("role", "")).casefold() == "user" and str(row.get("content", "")).strip()]
+        export_state = db.get_session_memory_export_state(self.settings.database_url, session_id) or {}
+        exported_user_count = int(export_state.get("exported_user_count") or 0)
         if not user_rows:
-            db.mark_session_memory_exported(self.settings.database_url, session_id)
+            db.mark_session_memory_exported(self.settings.database_url, session_id, exported_user_count=0)
             return
 
-        for chunk in self._chunk_rows(user_rows, size=3):
+        pending_user_rows = user_rows[exported_user_count:]
+        if not pending_user_rows:
+            return
+
+        for chunk in self._chunk_rows(pending_user_rows, size=3):
             content = " ".join(str(row["content"]).strip() for row in chunk if str(row.get("content", "")).strip()).strip()
             if not content:
                 continue
@@ -87,7 +91,11 @@ class PostProcessor:
                 importance=importance,
                 source="session_end",
             )
-        db.mark_session_memory_exported(self.settings.database_url, session_id)
+        db.mark_session_memory_exported(
+            self.settings.database_url,
+            session_id,
+            exported_user_count=len(user_rows),
+        )
 
     def _track_milestones(
         self,

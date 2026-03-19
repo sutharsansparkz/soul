@@ -122,7 +122,8 @@ def init_db(database: Path | str) -> None:
         """
         CREATE TABLE IF NOT EXISTS session_memory_exports (
             session_id TEXT PRIMARY KEY,
-            exported_at TEXT NOT NULL
+            exported_at TEXT NOT NULL,
+            exported_user_count INTEGER NOT NULL DEFAULT 0
         )
         """,
         """
@@ -238,6 +239,24 @@ def _migrate_hms_schema(connection: Connection) -> None:
             {"now_iso": utcnow_iso()},
         )
 
+    if "session_memory_exports" in tables:
+        _ensure_columns(
+            connection,
+            inspector=inspector,
+            table_name="session_memory_exports",
+            columns={
+                "exported_user_count": "INTEGER NOT NULL DEFAULT 0",
+            },
+        )
+        connection.execute(
+            text(
+                """
+                UPDATE session_memory_exports
+                SET exported_user_count = COALESCE(exported_user_count, 0)
+                """
+            )
+        )
+
 
 def _ensure_columns(
     connection: Connection,
@@ -324,6 +343,32 @@ def close_session(database: Path | str, session_id: str) -> None:
             text("UPDATE sessions SET ended_at = :ended_at WHERE id = :session_id"),
             {"ended_at": utcnow_iso(), "session_id": session_id},
         )
+
+
+def close_open_sessions_with_prefix(
+    database: Path | str,
+    session_prefix: str,
+    *,
+    except_session_id: str | None = None,
+) -> int:
+    with _get_engine(database).begin() as connection:
+        result = connection.execute(
+            text(
+                """
+                UPDATE sessions
+                SET ended_at = :ended_at
+                WHERE id LIKE :session_pattern
+                  AND ended_at IS NULL
+                  AND (:except_session_id IS NULL OR id != :except_session_id)
+                """
+            ),
+            {
+                "ended_at": utcnow_iso(),
+                "session_pattern": f"{session_prefix}%",
+                "except_session_id": except_session_id,
+            },
+        )
+    return int(result.rowcount or 0)
 
 
 def log_message(
@@ -1060,17 +1105,27 @@ def is_session_consolidated(database: Path | str, session_id: str) -> bool:
     return row is not None
 
 
-def mark_session_memory_exported(database: Path | str, session_id: str) -> None:
+def mark_session_memory_exported(
+    database: Path | str,
+    session_id: str,
+    *,
+    exported_user_count: int = 0,
+) -> None:
     with _get_engine(database).begin() as connection:
         connection.execute(
             text(
                 """
-                INSERT INTO session_memory_exports (session_id, exported_at)
-                VALUES (:session_id, :exported_at)
+                INSERT INTO session_memory_exports (session_id, exported_at, exported_user_count)
+                VALUES (:session_id, :exported_at, :exported_user_count)
                 ON CONFLICT(session_id) DO UPDATE SET exported_at = excluded.exported_at
+                  , exported_user_count = excluded.exported_user_count
                 """
             ),
-            {"session_id": session_id, "exported_at": utcnow_iso()},
+            {
+                "session_id": session_id,
+                "exported_at": utcnow_iso(),
+                "exported_user_count": max(0, int(exported_user_count)),
+            },
         )
 
 
@@ -1081,6 +1136,22 @@ def is_session_memory_exported(database: Path | str, session_id: str) -> bool:
             {"session_id": session_id},
         ).first()
     return row is not None
+
+
+def get_session_memory_export_state(database: Path | str, session_id: str) -> dict[str, object] | None:
+    with connect(database) as connection:
+        row = connection.execute(
+            text(
+                """
+                SELECT session_id, exported_at, exported_user_count
+                FROM session_memory_exports
+                WHERE session_id = :session_id
+                LIMIT 1
+                """
+            ),
+            {"session_id": session_id},
+        ).mappings().first()
+    return dict(row) if row else None
 
 
 def list_completed_sessions_with_messages_before(

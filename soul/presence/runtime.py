@@ -40,7 +40,10 @@ class PresenceRuntime:
         *,
         session_id: str | None = None,
         user_label: str | None = None,
+        close_session: bool = True,
+        export_session_end: bool | None = None,
     ) -> PresenceTurnResult:
+        should_export_session = close_session if export_session_end is None else export_session_end
         active_session_id = session_id or db.create_session(self.settings.database_url, self.soul.name)
         if session_id and not db.session_exists(self.settings.database_url, session_id):
             db.create_session(self.settings.database_url, self.soul.name, session_id=session_id)
@@ -85,4 +88,7 @@ class PresenceRuntime:
                 metadata={"companion_state": mood.companion_state, "user_mood": mood.user_mood},
             )
         finally:
-            db.close_session(self.settings.database_url, active_session_id)
+            if close_session:
+                db.close_session(self.settings.database_url, active_session_id)
+            if should_export_session:
+                self.post_processor.process_session_end(session_id=active_session_id)

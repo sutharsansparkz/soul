@@ -184,7 +184,7 @@ Optional hybrid upgrade (no new infra):
 | **Mood detection** | HuggingFace cardiffnlp/roberta | Input emotional tagging |
 | STT (optional) | Whisper (local) | Voice input from mic |
 | TTS (optional) | ElevenLabs | Companion speaks back via terminal |
-| Telegram (optional) | python-telegram-bot | Access from phone |
+| Telegram (optional) | Telegram Bot HTTP API (stdlib client) | Access from phone |
 | **Hybrid upgrade** | sentence-transformers (local) | Semantic embeddings as BLOB in SQLite — no new service |
 | Config | Pydantic Settings + `.env` | Environment management |
 
@@ -199,6 +199,9 @@ soul/
 ├── soul/                        # Main Python package
 │   ├── __init__.py
 │   ├── cli.py                   # Entry point — all CLI commands (Typer app)
+│   ├── config.py                # Pydantic settings and runtime path helpers
+│   ├── db.py                    # SQLite-first schema + query helpers
+│   ├── celery_app.py            # Celery/beat configuration
 │   │
 │   ├── core/
 │   │   ├── soul_loader.py       # Loads soul.yaml → immutable system prompt
@@ -213,6 +216,7 @@ soul/
 │   │   ├── scorer.py            # Human Memory Scoring — score, decay, boost
 │   │   ├── retriever.py         # BM25 + HMS reranking (+ optional cosine blend)
 │   │   ├── embedder.py          # Optional: local sentence-transformers embeddings
+│   │   ├── vector_store.py      # Local JSONL-backed fallback memory surface
 │   │   ├── user_story.py        # Structured user profile management
 │   │   └── shared_language.py   # Inside jokes, recurring references
 │   │
@@ -223,15 +227,16 @@ soul/
 │   │
 │   ├── tasks/
 │   │   ├── consolidate.py       # Nightly memory consolidation (Celery task)
+│   │   ├── hms_decay.py         # Nightly HMS decay
 │   │   ├── drift_weekly.py      # Weekly drift run
 │   │   └── proactive.py         # Proactive reach-out scheduler
 │   │
-│   └── models/
-│       ├── session.py
-│       ├── memory.py
-│       ├── memory_score.py      # HMS score record model
-│       ├── user_story.py
-│       └── drift_log.py
+│   ├── presence/
+│   │   ├── runtime.py           # Presence-surface bridge to the core runtime
+│   │   ├── telegram.py          # Telegram polling/sending integration
+│   │   └── voice.py             # Optional voice input/output bridge
+│   │
+│   └── telegram_bot.py          # Dedicated Telegram CLI entrypoint
 │
 ├── soul_data/                   # Companion's data (gitignored)
 │   ├── soul.yaml                # THE soul document — write this carefully

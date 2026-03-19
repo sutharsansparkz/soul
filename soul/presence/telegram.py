@@ -8,6 +8,7 @@ from urllib.error import URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from soul import db
 from soul.config import Settings, get_settings
 from soul.presence.runtime import PresenceRuntime, PresenceTurnResult
 
@@ -106,21 +107,50 @@ class TelegramBotRunner:
         self.telegram = telegram_client or TelegramClient(self.settings.telegram_bot_token)
 
     def status(self) -> dict[str, str]:
+        allowed_chat_id = self._configured_chat_id()
+        if not self.telegram.enabled:
+            telegram_state = self.telegram.status()
+        elif allowed_chat_id is None:
+            telegram_state = "disabled: missing valid TELEGRAM_CHAT_ID"
+        else:
+            telegram_state = "enabled"
         return {
-            "telegram": self.telegram.status(),
+            "telegram": telegram_state,
             "presence": "ready" if self.runtime else "disabled",
+            "allowed_chat": str(allowed_chat_id) if allowed_chat_id is not None else "unset",
         }
 
     def handle_update(self, update: TelegramUpdate) -> PresenceTurnResult | TelegramSendResult:
-        if not self.telegram.enabled:
+        allowed_chat_id = self._configured_chat_id()
+        if not self.telegram.enabled or allowed_chat_id is None:
             return TelegramSendResult(ok=False, chat_id=update.chat_id, message=update.text, error="telegram disabled")
+        if update.chat_id != allowed_chat_id:
+            return TelegramSendResult(ok=False, chat_id=update.chat_id, message=update.text, error="unauthorized chat")
+
+        session_id = f"telegram-{update.chat_id}-{datetime.now(timezone.utc).date().isoformat()}"
+        db.close_open_sessions_with_prefix(
+            self.settings.database_url,
+            f"telegram-{update.chat_id}-",
+            except_session_id=session_id,
+        )
 
         result = self.runtime.handle_text(
             update.text,
-            session_id=f"telegram-{update.chat_id}-{datetime.now(timezone.utc).date().isoformat()}",
+            session_id=session_id,
             user_label=update.username or update.first_name or f"telegram-{update.chat_id}",
+            close_session=False,
+            export_session_end=True,
         )
         return self.telegram.send_message(update.chat_id, result.reply_text)
+
+    def _configured_chat_id(self) -> int | None:
+        raw_chat_id = str(self.settings.telegram_chat_id or "").strip()
+        if not raw_chat_id:
+            return None
+        try:
+            return int(raw_chat_id)
+        except ValueError:
+            return None
 
     def poll_once(self, *, offset: int | None = None, timeout: int = 10) -> int:
         processed = 0

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from soul.config import Settings
 from soul.presence.telegram import TelegramBotRunner, TelegramClient, TelegramUpdate
 
 
@@ -66,3 +67,43 @@ def test_bot_runner_parses_updates():
     assert isinstance(update, TelegramUpdate)
     assert update.chat_id == 99
     assert update.text == "hey"
+
+
+def test_bot_runner_requires_single_allowed_chat(tmp_path):
+    settings = Settings(
+        database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
+        soul_data_path=str(tmp_path / "soul_data"),
+        telegram_bot_token="abc123",
+        telegram_chat_id="42",
+    )
+    called = {"count": 0}
+    runner = TelegramBotRunner(
+        runtime=SimpleNamespace(handle_text=lambda *args, **kwargs: called.__setitem__("count", called["count"] + 1)),
+        telegram_client=TelegramClient(token="abc123", opener=lambda request: None),
+        settings=settings,
+    )
+
+    rejected = runner.handle_update(TelegramUpdate(update_id=1, chat_id=99, text="hey"))
+
+    assert rejected.ok is False
+    assert rejected.error == "unauthorized chat"
+    assert called["count"] == 0
+
+
+def test_bot_runner_status_requires_valid_chat_id(tmp_path):
+    settings = Settings(
+        database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
+        soul_data_path=str(tmp_path / "soul_data"),
+        telegram_bot_token="abc123",
+        telegram_chat_id="",
+    )
+    runner = TelegramBotRunner(
+        runtime=SimpleNamespace(handle_text=lambda *args, **kwargs: SimpleNamespace(reply_text="hi")),
+        telegram_client=TelegramClient(token="abc123", opener=lambda request: None),
+        settings=settings,
+    )
+
+    status = runner.status()
+
+    assert status["telegram"].startswith("disabled")
+    assert status["allowed_chat"] == "unset"

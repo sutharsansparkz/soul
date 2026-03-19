@@ -10,11 +10,11 @@ This repository now contains a fuller local-to-production runtime:
 - `soul memories`, `soul story`, `soul drift`, `soul milestones`, and `soul status` expose the persistence layer.
 - `soul memories` now shows HMS-ranked memory tiers with score bars; `soul memories search` performs unified search across episodic + manual memory with HMS-aware ranking; `soul memories top|cold|boost` expose vivid/cold/manual-boost workflows; and `soul memories clear` clears all memory surfaces.
 - `soul story edit` opens the profile in your configured editor when `SOUL_EDITOR`, `VISUAL`, or `EDITOR` is set.
-- `soul telegram-bot` runs the Telegram polling surface when a bot token is configured.
+- `soul telegram-bot` runs the Telegram polling surface when both a bot token and the allowed chat id are configured.
 - LLM calls use Anthropic first, OpenAI second, and fall back to an offline heuristic companion response when keys are missing or unavailable.
 - Mood state can persist in Redis, episodic memory retrieval is SQLite FTS5 + HMS reranking, and optional local sentence-transformer embeddings can add cosine signal without external vector infra.
 - Maintenance now includes consolidation, resonance-based drift, proactive reach-out dispatch, monthly reflection generation, and archival/purge of raw session transcripts after retention windows. When LLM credentials are configured, consolidation can enrich the user profile with structured goals, fears, relationships, and shared phrases from completed sessions.
-- `make test` runs the local test suite as `python -m pytest -q` after verifying `pytest` is installed.
+- `make test` runs the local test suite as `python -m pytest -q` after verifying Python `>=3.11` and `pytest` are installed.
 - `make docker-test` builds the test image, starts the Compose services, and runs the suite inside Docker.
 
 ## Documentation
@@ -29,10 +29,10 @@ This repository now contains a fuller local-to-production runtime:
 ## Quick Start
 
 ```bash
-python -m venv .venv
-.venv\Scripts\activate
+python3.11 -m venv .venv
+source .venv/bin/activate
 pip install -e .[all]
-copy .env.example .env
+cp .env.example .env
 soul db init
 soul chat
 ```
@@ -42,6 +42,8 @@ Local test runs need the dev extra from `pyproject.toml` because `requirements.t
 ```bash
 pip install -e '.[dev]'
 ```
+
+The project requires Python `3.11+`.
 
 ## Docker
 
@@ -67,4 +69,4 @@ The implementation includes the main architecture from the design spec:
 - optional hybrid local embeddings (`HYBRID_EMBEDDINGS=true`) stored in SQLite `embedding` BLOB column
 - CLI chat, status, maintenance commands, and Telegram/voice integration hooks
 
-External-service prerequisites still matter: real LLM calls need provider keys, Telegram needs a bot token, ElevenLabs needs voice credentials, and local transcription needs `whisper` plus audio tooling.
+External-service prerequisites still matter: real LLM calls need provider keys, Telegram needs a bot token plus `TELEGRAM_CHAT_ID`, ElevenLabs needs voice credentials, and local transcription needs `whisper` plus audio tooling.

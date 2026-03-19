@@ -38,11 +38,13 @@
 - `drift_weekly.py`: weekly drift task + resonance signal derivation.
 - `proactive.py`: proactive trigger candidate generation + deduped delivery.
 
+## `soul/presence/`
+
+- `runtime.py`: bridges presence surfaces into the core runtime while preserving prompt/memory/post-processing flow.
+- `telegram.py`: Telegram polling/send adapter with single-chat enforcement.
+- `voice.py`: optional STT/TTS/recording bridge with graceful degradation when dependencies are absent.
+
 ## `soul/db.py`
 
 - DB bootstrap and data-access helpers for sessions, messages, milestones, memories, HMS score rows.
-- Maintains additive schema initialization for compatibility.
-
-## `soul/models/`
-
-- dataclass models for memory/story/session/drift surfaces, including `MemoryScore`.
+- Maintains additive schema initialization for compatibility, including FTS + session export progress.

@@ -48,7 +48,7 @@ In-session commands (`soul chat`):
   - merged ranking includes semantic relevance and HMS/importance score.
   - source label is shown per row (`episodic` or `manual`).
 - `soul memories clear`:
-  - clears legacy SQL memories, episodic SQL rows/scores, and vector surfaces (local + optional Chroma).
+  - clears legacy SQL memories, episodic SQL rows/scores, and the local JSONL fallback surface.
 
 ## HMS retrieval contract
 
@@ -73,3 +73,9 @@ Celery task names:
 - `soul.tasks.drift_weekly.weekly_drift_task`
 - `soul.tasks.proactive.proactive_presence_task`
 - `soul.evolution.reflection.monthly_reflection_task`
+
+## Telegram surface
+
+- `soul telegram-bot` runs in single-chat mode.
+- Both `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` must be configured.
+- Incoming updates from other chats are ignored and do not mutate story, memory, or milestones.

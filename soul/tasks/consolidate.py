@@ -119,10 +119,9 @@ def consolidate_lines(
             observed_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
         )
         story_updated = update.changed
-        if settings is not None:
-            llm_insights = _extract_structured_insights(user_lines, settings)
-            if llm_insights is not None:
-                story_updated = _merge_structured_insights(story, llm_insights) or story_updated
+        llm_insights = _extract_structured_insights(user_lines, resolved_settings)
+        if llm_insights is not None:
+            story_updated = _merge_structured_insights(story, llm_insights) or story_updated
         story_repo.save(story)
 
     if shared_language_path:

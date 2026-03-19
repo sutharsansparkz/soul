@@ -8,6 +8,7 @@ from soul import db
 import soul.cli as cli
 from soul.config import Settings
 from soul.core.mood_engine import MoodEngine
+from soul.core.post_processor import PostProcessor
 from soul.tasks.consolidate import StructuredSessionInsights, consolidate_day
 from typer.testing import CliRunner
 
@@ -173,3 +174,41 @@ def test_chat_voice_mode_uses_recording_when_prompt_is_blank(tmp_path, monkeypat
     messages = db.get_session_messages(settings.database_url, session_id)
     assert any(row["role"] == "user" and row["content"] == "voice hello" for row in messages)
     assert any(row["role"] == "assistant" and row["content"] == "I heard you." for row in messages)
+
+
+def test_process_session_end_exports_only_new_user_rows(tmp_path):
+    settings = Settings(
+        database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
+        soul_data_path=str(tmp_path / "soul_data"),
+    )
+    db.init_db(settings.database_url)
+    processor = PostProcessor(settings)
+    session_id = db.create_session(settings.database_url, "Ara")
+
+    db.log_message(settings.database_url, session_id=session_id, role="user", content="First thing I wanted to say.")
+    db.log_message(settings.database_url, session_id=session_id, role="assistant", content="I am listening.")
+    processor.process_session_end(session_id=session_id)
+
+    first_export = db.list_episodic_memories(
+        settings.database_url,
+        user_id=settings.user_id,
+        include_cold=True,
+        limit=20,
+    )
+    assert len(first_export) == 1
+
+    db.log_message(settings.database_url, session_id=session_id, role="user", content="Second thing I needed to add.")
+    db.log_message(settings.database_url, session_id=session_id, role="assistant", content="Keep going.")
+    processor.process_session_end(session_id=session_id)
+
+    second_export = db.list_episodic_memories(
+        settings.database_url,
+        user_id=settings.user_id,
+        include_cold=True,
+        limit=20,
+    )
+    export_state = db.get_session_memory_export_state(settings.database_url, session_id)
+
+    assert len(second_export) == 2
+    assert export_state is not None
+    assert int(export_state["exported_user_count"]) == 2

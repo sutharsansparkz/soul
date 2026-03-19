@@ -27,6 +27,11 @@ test:
 		echo "test requires Python, but neither 'python' nor 'python3' was found on PATH." >&2; \
 		exit 127; \
 	fi; \
+	PYTHON_VERSION=`$$PYTHON_BIN -c 'import sys; print(".".join(map(str, sys.version_info[:3])))'`; \
+	if ! $$PYTHON_BIN -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then \
+		echo "test requires Python >= 3.11, but $$PYTHON_VERSION is installed." >&2; \
+		exit 1; \
+	fi; \
 	if ! $$PYTHON_BIN -c "import pytest" >/dev/null 2>&1; then \
 		echo "test requires pytest for $$PYTHON_BIN, but it is not installed. Install dev dependencies from pyproject, for example: pip install -e '.[dev]'" >&2; \
 		exit 1; \
@@ -45,6 +50,11 @@ lint:
 	else \
 		echo "lint requires Python, but neither 'python' nor 'python3' was found on PATH." >&2; \
 		exit 127; \
+	fi; \
+	PYTHON_VERSION=`$$PYTHON_BIN -c 'import sys; print(".".join(map(str, sys.version_info[:3])))'`; \
+	if ! $$PYTHON_BIN -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then \
+		echo "lint requires Python >= 3.11, but $$PYTHON_VERSION is installed." >&2; \
+		exit 1; \
 	fi; \
 	mkdir -p .pycache; \
 	PYTHONPYCACHEPREFIX=.pycache $$PYTHON_BIN -m compileall soul scripts

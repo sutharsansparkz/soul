@@ -30,7 +30,7 @@
 ## Status
 
 - `soul status`
-- `soul telegram-bot`
+- `soul telegram-bot` (requires `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`)
 
 ## Admin
 

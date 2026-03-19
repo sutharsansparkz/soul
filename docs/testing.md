@@ -10,6 +10,8 @@ For local runs, install the test extra from `pyproject.toml` so `pytest` is avai
 pip install -e '.[dev]'
 ```
 
+The local Make targets expect Python `3.11+`.
+
 `requirements.txt` tracks runtime dependencies only, so it may not include test tooling.
 
 `make test` runs the suite as `python -m pytest -q`, which matches the Makefile's module-based invocation.
