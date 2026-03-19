@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+import hashlib
 import json
 import re
 
@@ -112,6 +113,7 @@ def apply_story_observations(
     changed = False
     big_moment_added: BigMoment | None = None
     known_events = {moment.event for moment in story.big_moments}
+    known_event_keys = {_event_key(moment.event) for moment in story.big_moments if moment.event.strip()}
     known_relationships = {
         (str(item.get("name", "")).casefold(), str(item.get("role", "")).casefold()) for item in story.relationships
     }
@@ -184,7 +186,8 @@ def apply_story_observations(
 
         if _looks_like_big_moment(lowered):
             event = stripped[:180]
-            if event not in known_events:
+            event_key = _event_key(event)
+            if event not in known_events and event_key not in known_event_keys:
                 big_moment_added = BigMoment(
                     date=datetime.now(timezone.utc).date().isoformat(),
                     event=event,
@@ -193,6 +196,7 @@ def apply_story_observations(
                 )
                 story.big_moments.append(big_moment_added)
                 known_events.add(event)
+                known_event_keys.add(event_key)
                 changed = True
 
     recent_texts = [text.strip() for text in texts if text.strip()]
@@ -282,3 +286,8 @@ def _extract_upcoming_event(text: str) -> dict[str, str] | None:
     date_value = match.group("date")
     title = text.strip()[:160]
     return {"date": date_value, "title": title, "notes": ""}
+
+
+def _event_key(event_text: str) -> str:
+    normalized = " ".join(event_text.casefold().split())
+    return hashlib.md5(normalized.encode("utf-8")).hexdigest()[:12]

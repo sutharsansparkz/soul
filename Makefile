@@ -6,13 +6,13 @@ build:
 	docker compose build app worker beat test
 
 up:
-	docker compose up -d app worker beat postgres redis chroma
+	docker compose up -d app worker beat redis
 
 down:
 	docker compose down -v
 
 logs:
-	docker compose logs -f app worker beat postgres redis chroma
+	docker compose logs -f app worker beat redis
 
 shell:
 	docker compose run --rm app

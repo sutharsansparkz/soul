@@ -191,7 +191,8 @@ class PostProcessor:
 
     def _update_story(self, user_text: str, mood: MoodSnapshot) -> dict[str, str | None]:
         story = self.story_repo.load()
-        story.user_id = story.user_id or self.settings.user_id
+        if not story.user_id or story.user_id in ("unknown", ""):
+            story.user_id = self.settings.user_id
         update = apply_story_observations(
             story,
             [user_text],
@@ -261,6 +262,8 @@ class PostProcessor:
         if len(days) < length:
             return False
         recent = days[-length:]
+        if len(set(recent)) < length:
+            return False
         return all((recent[index] - recent[index - 1]) == timedelta(days=1) for index in range(1, len(recent)))
 
     def _has_anniversary(self, *, days: int) -> bool:
@@ -268,7 +271,10 @@ class PostProcessor:
         if not sessions:
             return False
         first_date = datetime.fromisoformat(str(sessions[0]["started_at"])).date()
-        return (datetime.now(timezone.utc).date() - first_date).days >= days
+        today = datetime.now(timezone.utc).date()
+        if first_date == today:
+            return False
+        return (today - first_date).days >= days
 
     def _slugify(self, value: str) -> str:
         slug = "".join(char.lower() if char.isalnum() else "_" for char in value)

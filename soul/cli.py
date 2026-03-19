@@ -63,7 +63,6 @@ def _ensure_runtime_files(settings: Settings) -> None:
     settings.soul_data_dir.mkdir(parents=True, exist_ok=True)
     if settings.database_is_sqlite:
         settings.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
-    settings.chroma_dir.mkdir(parents=True, exist_ok=True)
     settings.session_log_dir.mkdir(parents=True, exist_ok=True)
     settings.session_archive_dir.mkdir(parents=True, exist_ok=True)
 
@@ -138,16 +137,6 @@ def _render_story(path: Path) -> None:
         return
     payload = json.loads(path.read_text(encoding="utf-8"))
     console.print_json(json.dumps(payload))
-
-
-def _export_latest_session_log(settings: Settings) -> Path:
-    last_session_id = db.get_last_completed_session_id(settings.database_url)
-    session_log = settings.latest_session_log_file
-    if not last_session_id:
-        return session_log
-    lines = [f"{row['role']}: {row['content']}" for row in db.get_session_messages(settings.database_url, last_session_id)]
-    session_log.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
-    return session_log
 
 
 def _voice_output(voice_bridge: VoiceBridge, enabled: bool, text: str) -> None:

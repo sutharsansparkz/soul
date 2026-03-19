@@ -56,6 +56,9 @@ class ContextBuilder:
 
     def _story_summary(self) -> str | None:
         story = self.story_repo.load()
+        if not story.user_id or story.user_id == "unknown":
+            story.user_id = self.settings.user_id
+            self.story_repo.save(story)
         parts: list[str] = []
         if story.basics:
             bits = ", ".join(f"{key}: {value}" for key, value in story.basics.items() if value)

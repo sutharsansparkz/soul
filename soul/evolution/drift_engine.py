@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from datetime import date, datetime, timezone
 from pathlib import Path
 import json
 
@@ -57,8 +58,28 @@ class DriftLogRepository:
         if not self.path.exists():
             return []
         payload = json.loads(self.path.read_text(encoding="utf-8"))
-        return [DriftRun(**item) for item in payload]
+        migrated = False
+        runs: list[DriftRun] = []
+        for item in payload:
+            record = dict(item)
+            if not _is_iso_date(record.get("run_date")):
+                record["run_date"] = datetime.now(timezone.utc).date().isoformat()
+                migrated = True
+            runs.append(DriftRun(**record))
+        if migrated:
+            self.save(runs)
+        return runs
 
     def save(self, runs: list[DriftRun]) -> None:
         payload = [asdict(run) for run in runs]
         self.path.write_text(json.dumps(payload, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+
+
+def _is_iso_date(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        return False
+    return True

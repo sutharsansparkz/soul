@@ -17,13 +17,9 @@ class Settings(BaseSettings):
     database_url: str = Field(default="sqlite:///./soul_data/db/soul.db", alias="DATABASE_URL")
     soul_data_path: str = Field(default="./soul_data", alias="SOUL_DATA_DIR")
     redis_url: str = Field(default="redis://localhost:6379", alias="REDIS_URL")
-    chroma_path: str = Field(default="./soul_data/chroma", alias="CHROMA_PATH")
-    chroma_host: str | None = Field(default=None, alias="CHROMA_HOST")
-    chroma_enabled: bool = Field(default=False, alias="CHROMA_ENABLED")
 
     llm_model: str = Field(default="claude-sonnet-4-6", alias="LLM_MODEL")
     fallback_llm_model: str = Field(default="gpt-4o", alias="FALLBACK_LLM_MODEL")
-    embedding_model: str = Field(default="text-embedding-3-small", alias="EMBEDDING_MODEL")
     hybrid_embeddings: bool = Field(default=False, alias="HYBRID_EMBEDDINGS")
     hybrid_model: str = Field(default="all-MiniLM-L6-v2", alias="HYBRID_MODEL")
     memory_retrieval_k: int = Field(default=5, alias="MEMORY_RETRIEVAL_K")
@@ -135,13 +131,6 @@ class Settings(BaseSettings):
         return path
 
     @property
-    def chroma_dir(self) -> Path:
-        path = Path(self.chroma_path)
-        if not path.is_absolute():
-            path = (ROOT_DIR / path).resolve()
-        return path
-
-    @property
     def database_is_sqlite(self) -> bool:
         return self.database_url.startswith("sqlite:///")
 
@@ -158,7 +147,6 @@ class Settings(BaseSettings):
         redacted["database_url"] = self.database_url
         if self.database_is_sqlite:
             redacted["sqlite_path"] = str(self.sqlite_path)
-        redacted["chroma_dir"] = str(self.chroma_dir)
         redacted["session_archive_dir"] = str(self.session_archive_dir)
         return redacted
 

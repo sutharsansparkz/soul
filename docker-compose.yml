@@ -1,97 +1,4 @@
 services:
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: soul-app:local
-    environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://soul:soul@postgres:5432/soul}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-      CHROMA_PATH: ${CHROMA_PATH:-/data/chroma}
-      CHROMA_ENABLED: ${CHROMA_ENABLED:-true}
-      ENVIRONMENT: ${ENVIRONMENT:-production}
-    volumes:
-      - soul-data:/data
-    stdin_open: true
-    tty: true
-    command: ["chat"]
-    depends_on:
-      redis:
-        condition: service_started
-      chroma:
-        condition: service_started
-      postgres:
-        condition: service_healthy
-
-  worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: soul-app:local
-    entrypoint: ["python"]
-    environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://soul:soul@postgres:5432/soul}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-      CHROMA_PATH: ${CHROMA_PATH:-/data/chroma}
-      CHROMA_ENABLED: ${CHROMA_ENABLED:-true}
-      ENVIRONMENT: ${ENVIRONMENT:-production}
-    volumes:
-      - soul-data:/data
-    command: ["-m", "scripts.worker"]
-    depends_on:
-      redis:
-        condition: service_started
-      chroma:
-        condition: service_started
-      postgres:
-        condition: service_healthy
-
-  beat:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: soul-app:local
-    entrypoint: ["python"]
-    environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://soul:soul@postgres:5432/soul}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-      CHROMA_PATH: ${CHROMA_PATH:-/data/chroma}
-      CHROMA_ENABLED: ${CHROMA_ENABLED:-true}
-      ENVIRONMENT: ${ENVIRONMENT:-production}
-    volumes:
-      - soul-data:/data
-    command: ["-m", "scripts.beat"]
-    depends_on:
-      redis:
-        condition: service_started
-      chroma:
-        condition: service_started
-      postgres:
-        condition: service_healthy
-
-  test:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: soul-app:local
-    entrypoint: ["python"]
-    environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://soul:soul@postgres:5432/soul_test}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-      CHROMA_PATH: ${CHROMA_PATH:-/tmp/chroma}
-      CHROMA_ENABLED: ${CHROMA_ENABLED:-true}
-      ENVIRONMENT: ${ENVIRONMENT:-test}
-    volumes:
-      - ./:/app
-    command: ["-m", "pytest", "-q"]
-    depends_on:
-      redis:
-        condition: service_started
-      chroma:
-        condition: service_started
-      postgres:
-        condition: service_healthy
-
   redis:
     image: redis:7-alpine
     ports:
@@ -102,36 +9,71 @@ services:
       timeout: 3s
       retries: 10
 
-  chroma:
-    image: chromadb/chroma:latest
-    ports:
-      - "8000:8000"
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: soul-app:local
     volumes:
-      - chroma-data:/chroma/chroma
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8000/api/v1/heartbeat"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
-  postgres:
-    image: postgres:16-alpine
+      - ./soul_data:/app/soul_data
     environment:
-      POSTGRES_DB: soul
-      POSTGRES_USER: soul
-      POSTGRES_PASSWORD: soul
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U soul -d soul"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-      - ./scripts/init/01-create-test-db.sql:/docker-entrypoint-initdb.d/01-create-test-db.sql:ro
+      DATABASE_URL: ${DATABASE_URL:-sqlite:///./soul_data/db/soul.db}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+    stdin_open: true
+    tty: true
+    command: ["chat"]
+    depends_on:
+      redis:
+        condition: service_started
 
-volumes:
-  soul-data:
-  chroma-data:
-  postgres-data:
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: soul-app:local
+    entrypoint: ["python"]
+    volumes:
+      - ./soul_data:/app/soul_data
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-sqlite:///./soul_data/db/soul.db}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+    command: ["-m", "scripts.worker"]
+    depends_on:
+      redis:
+        condition: service_started
+
+  beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: soul-app:local
+    entrypoint: ["python"]
+    volumes:
+      - ./soul_data:/app/soul_data
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-sqlite:///./soul_data/db/soul.db}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+    command: ["-m", "scripts.beat"]
+    depends_on:
+      redis:
+        condition: service_started
+
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: soul-app:local
+    entrypoint: ["python"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-sqlite:///./soul_data/db/soul.db}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      ENVIRONMENT: ${ENVIRONMENT:-test}
+    volumes:
+      - ./:/app
+    command: ["-m", "pytest", "-q"]
+    depends_on:
+      redis:
+        condition: service_started

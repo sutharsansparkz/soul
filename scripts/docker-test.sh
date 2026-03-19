@@ -7,5 +7,5 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 
 docker compose build app test
-docker compose up -d redis chroma postgres
+docker compose up -d redis
 docker compose run --rm test

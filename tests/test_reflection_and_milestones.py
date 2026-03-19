@@ -38,7 +38,6 @@ def test_post_processor_records_milestones_and_story_updates(tmp_path):
     settings = Settings(
         database_url=database_url,
         soul_data_path=str(tmp_path / "soul_data"),
-        chroma_path=str(tmp_path / "chroma"),
         user_id="local-user",
     )
     session_id = db.create_session(database_url, "Ara")
@@ -89,7 +88,6 @@ def test_post_processor_tracks_recurring_phrase_and_dedupes_major_life_events(tm
     settings = Settings(
         database_url=database_url,
         soul_data_path=str(tmp_path / "soul_data"),
-        chroma_path=str(tmp_path / "chroma"),
         user_id="local-user",
     )
     session_id = db.create_session(database_url, "Ara")
@@ -130,7 +128,6 @@ def test_post_processor_tracks_streak_and_anniversary_milestones(tmp_path):
     settings = Settings(
         database_url=database_url,
         soul_data_path=str(tmp_path / "soul_data"),
-        chroma_path=str(tmp_path / "chroma"),
         user_id="local-user",
     )
     processor = PostProcessor(settings)
@@ -180,7 +177,6 @@ def test_story_edit_reports_path_without_opening_an_editor(tmp_path, monkeypatch
     settings = Settings(
         database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
         soul_data_path=str(tmp_path / "soul_data"),
-        chroma_path=str(tmp_path / "chroma"),
     )
     monkeypatch.setattr(cli, "_bootstrap", lambda: (settings, SimpleNamespace(name="Ara")))
 
@@ -195,7 +191,6 @@ def test_story_edit_uses_configured_editor(tmp_path, monkeypatch):
     settings = Settings(
         database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
         soul_data_path=str(tmp_path / "soul_data"),
-        chroma_path=str(tmp_path / "chroma"),
     )
     commands: list[list[str]] = []
 
@@ -207,3 +202,72 @@ def test_story_edit_uses_configured_editor(tmp_path, monkeypatch):
 
     assert result.exit_code == 0
     assert commands == [["custom-editor", "--wait", str(settings.user_story_file)]]
+
+
+def test_post_processor_dedupes_near_identical_big_moments_by_normalized_hash(tmp_path):
+    database_url = f"sqlite:///{(tmp_path / 'soul.db').as_posix()}"
+    db.init_db(database_url)
+
+    settings = Settings(
+        database_url=database_url,
+        soul_data_path=str(tmp_path / "soul_data"),
+        user_id="local-user",
+    )
+    session_id = db.create_session(database_url, "Ara")
+    processor = PostProcessor(settings)
+    mood = MoodSnapshot(user_mood="celebrating", companion_state="warm", confidence=0.9, rationale="heuristic")
+
+    processor.process_turn(
+        session_id=session_id,
+        user_text="I launched the beta.",
+        assistant_text="That matters.",
+        mood=mood,
+    )
+    processor.process_turn(
+        session_id=session_id,
+        user_text="I   launched   the beta.",
+        assistant_text="That matters.",
+        mood=mood,
+    )
+
+    story = processor.story_repo.load()
+
+    assert len(story.big_moments) == 1
+
+
+def test_post_processor_does_not_fire_streak_or_anniversary_from_same_day_sessions(tmp_path):
+    database_url = f"sqlite:///{(tmp_path / 'soul.db').as_posix()}"
+    db.init_db(database_url)
+
+    settings = Settings(
+        database_url=database_url,
+        soul_data_path=str(tmp_path / "soul_data"),
+        user_id="local-user",
+    )
+    processor = PostProcessor(settings)
+    today = datetime.now(timezone.utc).replace(microsecond=0)
+
+    same_day_sessions = [db.create_session(database_url, "Ara") for _ in range(7)]
+    for index, session_id in enumerate(same_day_sessions):
+        db.log_message(database_url, session_id=session_id, role="user", content=f"Same day check-in {index}.")
+        with db.connect(database_url) as connection:
+            connection.execute(
+                text("UPDATE sessions SET started_at = :started_at, ended_at = :ended_at WHERE id = :session_id"),
+                {
+                    "started_at": today.isoformat(),
+                    "ended_at": today.isoformat(),
+                    "session_id": session_id,
+                },
+            )
+            connection.commit()
+
+    current_session = db.create_session(database_url, "Ara")
+    processor.process_turn(
+        session_id=current_session,
+        user_text="I had a rough day but I showed up again.",
+        assistant_text="I noticed.",
+        mood=MoodSnapshot(user_mood="venting", companion_state="warm", confidence=0.8, rationale="heuristic"),
+    )
+
+    assert not db.milestone_exists(database_url, "seven_day_streak")
+    assert not db.milestone_exists(database_url, "one_month_anniversary")

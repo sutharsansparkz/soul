@@ -11,7 +11,7 @@ from soul.memory.fts import ensure_fts_index
 from soul.memory.retriever import MemoryRetriever
 from soul.memory.scorer import boosted_components, initial_components, recompute_components
 
-from .vector_store import MemoryRecord, build_vector_store
+from .vector_store import LocalVectorStore, MemoryRecord, build_vector_store
 
 
 class EpisodicMemoryRepository:
@@ -22,7 +22,7 @@ class EpisodicMemoryRepository:
             ensure_fts_index(self.settings.database_url)
         except Exception:
             pass
-        self.store = build_vector_store(store_path, settings=self.settings)
+        self.store: LocalVectorStore = build_vector_store(store_path, settings=self.settings)
         self.retriever = MemoryRetriever(self.settings, self)
 
     def add_text(
