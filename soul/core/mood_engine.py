@@ -36,7 +36,7 @@ class MoodEngine:
         "curious": "curious",
         "reflective": "reflective",
         "venting": "warm",
-        "neutral": "curious",
+        "neutral": "neutral",
     }
 
     MODEL_LABEL_MAP = {
@@ -118,11 +118,9 @@ class MoodEngine:
             if previous_dt is not None:
                 hours = (now - previous_dt).total_seconds() / 3600
                 if hours < self.settings.mood_decay_hours:
-                    return str(previous_state.get("state") or "curious")
+                    return str(previous_state.get("state") or "neutral")
 
-        if now.hour >= 23 or now.hour < 5:
-            return "reflective"
-        return "curious"
+        return "neutral"
 
     def _heuristic_mood(self, text: str, now: datetime) -> tuple[str, float, str]:
         lowered = text.casefold()

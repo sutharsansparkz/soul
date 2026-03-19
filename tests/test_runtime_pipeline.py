@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 from types import SimpleNamespace
 
@@ -23,7 +24,21 @@ def test_mood_engine_degrades_cleanly_when_redis_is_unavailable(tmp_path):
     snapshot = engine.analyze("I had a rough day today.")
 
     assert snapshot.user_mood in {"venting", "overwhelmed", "stressed", "neutral"}
-    assert snapshot.companion_state in {"warm", "quiet", "concerned", "curious", "reflective", "playful"}
+    assert snapshot.companion_state in {"warm", "quiet", "concerned", "curious", "reflective", "playful", "neutral"}
+
+
+def test_mood_engine_decays_to_neutral_after_decay_window():
+    settings = Settings(
+        redis_url="redis://localhost:6399/0",
+        mood_decay_hours=18,
+    )
+    engine = MoodEngine(settings)
+    state = engine._select_companion_state(  # noqa: SLF001
+        "neutral",
+        previous_state={"state": "concerned", "updated_at": "2026-03-18T00:00:00+00:00"},
+        now=datetime(2026, 3, 19, 20, 0, tzinfo=timezone.utc),
+    )
+    assert state == "neutral"
 
 
 def test_consolidate_day_updates_story_and_memory_files(tmp_path):

@@ -4,6 +4,7 @@ SOUL is a terminal-first companion system with four runtime layers:
 
 - Soul layer: immutable identity prompt loaded from `soul_data/soul.yaml`.
 - Emotional layer: mood inference + companion state persistence (`soul/core/mood_engine.py`).
+  Companion state decays toward a neutral baseline after the configured decay window.
 - Memory layer: episodic/semantic memory, HMS scoring, user story, shared language.
 - Evolution/presence layer: drift, milestones, reflection, proactive triggers, voice, Telegram.
 

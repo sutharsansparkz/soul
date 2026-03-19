@@ -132,7 +132,7 @@
     "category": "continuity",
     "user_input": "I went for a walk today.",
     "expected_user_mood": "neutral",
-    "expected_companion_state": "curious",
+    "expected_companion_state": "neutral",
     "expected_reply_phrase": "i'm listening"
   },
   {
