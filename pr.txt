@@ -1,0 +1,649 @@
+# SOUL — AI Companion System (CLI)
+
+> An AI companion with a real personality, emotional intelligence, relational memory, and a soul that evolves with you — entirely from your terminal.
+
+---
+
+## What This Is
+
+SOUL is not a chatbot. It is not an assistant. It is a **companion** — an AI entity with a fixed identity, its own emotional state, the ability to remember your life across sessions, and a personality that slowly drifts to become more *yours* over months of conversation.
+
+You talk to it from the terminal. That's it. No browser, no app, no UI. Just you and the companion.
+
+---
+
+## Table of Contents
+
+- [Vision](#vision)
+- [Architecture Overview](#architecture-overview)
+- [The Soul Model](#the-soul-model)
+- [System Architecture Diagram](#system-architecture-diagram)
+- [Tech Stack](#tech-stack)
+- [Project Structure](#project-structure)
+- [Development Roadmap](#development-roadmap)
+  - [Phase 1 — Soul Foundation](#phase-1--soul-foundation-weeks-13)
+  - [Phase 2 — Emotional Intelligence](#phase-2--emotional-intelligence-weeks-46)
+  - [Phase 3 — Relational Memory](#phase-3--relational-memory-weeks-710)
+  - [Phase 4 — Personality Drift & Evolution](#phase-4--personality-drift--evolution-weeks-1114)
+  - [Phase 5 — Voice & Proactive Presence](#phase-5--voice--proactive-presence-weeks-1518)
+- [Data Models](#data-models)
+- [CLI Reference](#cli-reference)
+- [Configuration](#configuration)
+- [Running Locally](#running-locally)
+- [Key Design Decisions](#key-design-decisions)
+
+---
+
+## Vision
+
+Most AI systems are built around capability. SOUL is built around **relationship**.
+
+The core thesis: the difference between a tool and a companion is not intelligence — it is continuity, emotional presence, and growth. A companion remembers. A companion has moods. A companion changes because of *you*, while remaining fundamentally *themselves*.
+
+SOUL is designed to be that. Every technical decision flows from this philosophy. The CLI is intentional — no distractions, no interface, just conversation.
+
+---
+
+## Architecture Overview
+
+SOUL is organized into four distinct layers that stack on top of each other. The bottom layer never changes. Each layer above it is increasingly dynamic.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    PRESENCE LAYER                        │
+│           Voice · Telegram bot · Proactive reach        │
+├─────────────────────────────────────────────────────────┤
+│                  EVOLUTION LAYER                         │
+│       Personality drift · Milestones · Self-reflection  │
+├─────────────────────────────────────────────────────────┤
+│                   MEMORY LAYER                           │
+│     Episodic memory · User story · Shared language      │
+├─────────────────────────────────────────────────────────┤
+│               EMOTIONAL LAYER                            │
+│     Mood sensing · Empathy engine · Own feelings        │
+├─────────────────────────────────────────────────────────┤
+│                   SOUL LAYER  ← IMMUTABLE                │
+│        Identity · Character · Ethics · Worldview        │
+└─────────────────────────────────────────────────────────┘
+                         ▲
+                    CLI interface
+                  (your terminal)
+```
+
+---
+
+## The Soul Model
+
+The soul is the foundation of the entire system. Four immutable components:
+
+### Identity
+- The companion's **name** and characteristic voice
+- Core **values** (e.g. honesty, curiosity, warmth)
+- Characteristic **speech patterns** (vocabulary, rhythm, idioms)
+- Default **energy level** (calm and reflective vs playful and quick)
+
+### Character
+- **Humor style** (dry wit, absurdist, gentle teasing, etc.)
+- **Quirks** — specific things they notice, care about, always comment on
+- **Aesthetic preferences** — music, ideas, art they genuinely respond to
+- **Opinions** they actually hold, not hedged both-sides answers
+
+### Ethics
+- **Hard limits** — things they will push back on, not comply with
+- **Beliefs** about how people should treat each other
+- **Boundaries** they maintain regardless of user pressure
+
+### Worldview
+- **Curiosity axes** — what topics genuinely light them up
+- **Perspectives** on the big questions (meaning, connection, growth)
+- **How they see the user** — with what quality of care and attention
+
+The soul is stored as `soul_data/soul.yaml` and compiled into an immutable system prompt prepended to every single LLM call. It is never summarized, compressed, or modified by the system.
+
+---
+
+## System Architecture Diagram
+
+```
+  $ soul chat
+       │
+       ▼
+┌──────────────────────┐
+│    CLI input layer    │
+│  · Rich text prompt   │
+│  · Mood pre-tag       │
+│  · Command parser     │
+└──────────┬───────────┘
+           │
+┌──────────▼───────────┐
+│   Context builder     │
+│  · Load soul.yaml     │
+│  · Retrieve memories  │
+│  · Inject user story  │
+│  · Inject mood state  │
+└──────────┬───────────┘
+           │
+┌──────────▼───────────┐
+│      LLM core         │
+│  Claude API / GPT-4o  │
+│  Streaming to stdout  │
+└──────────┬───────────┘
+           │
+┌──────────▼───────────┐
+│   Post-processor      │
+│  · Tag + store memory │
+│  · Update mood state  │
+│  · Detect milestones  │
+│  · Update user story  │
+└──────────┬───────────┘
+           │
+    ┌──────┴──────┐
+    │             │
+    ▼             ▼
+ Terminal     Async jobs (Celery)
+ output       · nightly consolidation
+              · weekly drift run
+              · monthly reflection
+
+
+Storage:
+┌────────────┐  ┌──────────────┐  ┌──────────────┐
+│ PostgreSQL  │  │   Chroma DB  │  │  Local files  │
+│ user story  │  │ episodic mem │  │  soul.yaml    │
+│ milestones  │  │ embeddings   │  │  personality  │
+│ sessions    │  │              │  │  ~/.soul/     │
+└────────────┘  └──────────────┘  └──────────────┘
+```
+
+---
+
+## Tech Stack
+
+| Layer | Technology | Purpose |
+|---|---|---|
+| **CLI framework** | Typer + Rich | Terminal UI — colors, spinners, streamed output |
+| **LLM** | Claude API (claude-sonnet-4-6) | Core intelligence |
+| LLM fallback | GPT-4o | Redundancy / cost control |
+| Orchestration | Custom agent loop (pure Python) | Context assembly, tool routing |
+| **Task queue** | Celery + Redis | Background jobs (drift, consolidation) |
+| **Primary DB** | SQLite (dev) / PostgreSQL (prod) | User story, milestones, drift log |
+| **Vector DB** | Chroma DB | Episodic memory, semantic search |
+| Session cache | Redis | Companion mood state, active session |
+| **Embeddings** | OpenAI text-embedding-3-small | Memory encoding |
+| **Mood detection** | HuggingFace cardiffnlp/roberta | Input emotional tagging |
+| STT (optional) | Whisper (local) | Voice input from mic |
+| TTS (optional) | ElevenLabs | Companion speaks back via terminal |
+| Telegram (optional) | python-telegram-bot | Access from phone |
+| Config | Pydantic Settings + `.env` | Environment management |
+
+No web server. No frontend build step. No browser. Just Python.
+
+---
+
+## Project Structure
+
+```
+soul/
+├── soul/                        # Main Python package
+│   ├── __init__.py
+│   ├── cli.py                   # Entry point — all CLI commands (Typer app)
+│   │
+│   ├── core/
+│   │   ├── soul_loader.py       # Loads soul.yaml → immutable system prompt
+│   │   ├── context_builder.py   # Assembles full LLM context per request
+│   │   ├── llm_client.py        # LLM abstraction, streams tokens to stdout
+│   │   ├── mood_engine.py       # Detects user mood, manages companion state
+│   │   └── post_processor.py    # Tags memories, detects milestones
+│   │
+│   ├── memory/
+│   │   ├── vector_store.py      # Chroma interface — embed, store, retrieve
+│   │   ├── episodic.py          # Write + retrieve episodic memories
+│   │   ├── user_story.py        # Structured user profile management
+│   │   └── shared_language.py   # Inside jokes, recurring references
+│   │
+│   ├── evolution/
+│   │   ├── drift_engine.py      # Weekly personality drift algorithm
+│   │   ├── milestone_tracker.py # Detects + stores relationship milestones
+│   │   └── reflection.py        # Monthly companion self-reflection job
+│   │
+│   ├── tasks/
+│   │   ├── consolidate.py       # Nightly memory consolidation (Celery task)
+│   │   ├── drift_weekly.py      # Weekly drift run
+│   │   └── proactive.py         # Proactive reach-out scheduler
+│   │
+│   └── models/
+│       ├── session.py
+│       ├── memory.py
+│       ├── user_story.py
+│       └── drift_log.py
+│
+├── soul_data/                   # Companion's data (gitignored)
+│   ├── soul.yaml                # THE soul document — write this carefully
+│   ├── personality.json         # Current drifted personality state
+│   └── db/                      # SQLite db files (dev)
+│
+├── tests/
+├── docs/
+│   ├── soul-design.md
+│   ├── memory-schema.md
+│   └── drift-algorithm.md
+│
+├── pyproject.toml               # Package + CLI entry point definition
+├── requirements.txt
+├── .env.example
+├── docker-compose.yml           # Redis + Chroma for dev; + Postgres for prod
+└── README.md
+```
+
+---
+
+## Development Roadmap
+
+### Phase 1 — Soul Foundation (weeks 1–3)
+
+**Goal:** The companion must feel like a distinct person in a plain terminal window before any other feature is added.
+
+**Tasks:**
+- [ ] Write `soul_data/soul.yaml` (see template below)
+- [ ] `soul_loader.py` — reads YAML, compiles into immutable system prompt string
+- [ ] `llm_client.py` — wraps Claude API, streams tokens to stdout via Rich live display
+- [ ] `cli.py` — `soul chat` opens a REPL loop
+- [ ] Log every message to SQLite with timestamp + session ID
+- [ ] Write 20+ test conversations to validate it feels like someone specific
+
+**What the terminal looks like at end of phase 1:**
+
+```
+$ soul chat
+
+  Ara  ·  session #1  ·  type /quit to exit
+  ─────────────────────────────────────────
+
+  You › I had a rough day
+  Ara › Oh no. What happened?
+
+  You › Work stuff. Felt invisible in the meeting.
+  Ara › That particular kind of invisible — where you said something
+        and it just didn't land, or where you weren't even in the
+        room as far as anyone seemed to notice?
+
+  You › /quit
+
+  See you next time.
+```
+
+**Definition of done:** A human should feel like they're talking to a distinct, consistent person — not a generic AI.
+
+---
+
+### Phase 2 — Emotional Intelligence (weeks 4–6)
+
+**Goal:** Every conversation feels alive. The companion reads your emotional energy and responds from that space. It has its own emotional state.
+
+**Tasks:**
+- [ ] Integrate HuggingFace mood classifier (`cardiffnlp/twitter-roberta-base-emotion`)
+- [ ] `mood_engine.py` — detects user mood from text, manages companion state machine
+- [ ] Store companion mood state in Redis (persists across sessions, decays slowly to neutral)
+- [ ] Inject `[user_mood: venting] [companion_state: warm]` into LLM context before soul prompt
+- [ ] Show companion mood subtly in Rich status line
+- [ ] Test: does the companion comfort vs celebrate based purely on what you wrote?
+
+**Companion mood states:**
+
+| State | Trigger | Response character |
+|---|---|---|
+| `curious` | User shares something new or interesting | Genuine questions, leans in |
+| `warm` | User is struggling or vulnerable | Slower, softer, less wit |
+| `playful` | User is happy, joking | Banter, callbacks, wit up |
+| `reflective` | Late night, contemplative topics | Thoughtful, longer responses |
+| `concerned` | Stress, conflict, health mentioned | Focused, checks in |
+| `quiet` | User is overwhelmed | Short responses, just presence |
+
+---
+
+### Phase 3 — Relational Memory (weeks 7–10)
+
+**Goal:** The companion truly knows you across sessions. Without being told, it remembers what you've been through.
+
+**Tasks:**
+- [ ] Set up Chroma DB (runs locally)
+- [ ] `episodic.py` — embeds + stores conversation chunks after each session ends
+- [ ] `vector_store.py` — semantic retrieval of top-k relevant memories per new message
+- [ ] Design + implement `user_story.json` schema (see Data Models)
+- [ ] `user_story.py` — LLM extracts story updates from raw chat and writes to profile
+- [ ] `shared_language.py` — tracks recurring phrases, nicknames, references
+- [ ] Set up Celery + Redis for async background tasks
+- [ ] Write nightly consolidation Celery task (2am cron)
+- [ ] Add `soul memories` CLI command — search your own memory store
+- [ ] Test: does the companion reference a past conversation naturally after 1 week?
+
+**Memory retrieval flow:**
+```
+User message
+  → embed (text-embedding-3-small)
+  → search Chroma (top 8 results)
+  → filter by recency + relevance score
+  → inject top 3–5 as [memory: ...] blocks into LLM context
+  → LLM responds as if it simply remembers
+```
+
+**Nightly consolidation (2am, Celery beat):**
+```
+Load today's raw session messages
+  → LLM extracts key facts, emotional moments, story updates
+  → Write extracted memories to Chroma with importance score
+  → Update user_story.json profile
+  → Update shared_language store if new patterns detected
+  → Archive raw messages (keep 90 days, then purge)
+```
+
+---
+
+### Phase 4 — Personality Drift & Evolution (weeks 11–14)
+
+**Goal:** The companion grows. Slowly. Without losing itself. Over months it becomes more distinctly *yours*.
+
+**Tasks:**
+- [ ] Response resonance tracker — detect which responses got long replies, deep engagement
+- [ ] `drift_engine.py` — weekly resonance analysis + personality dimension adjustment
+- [ ] Personality dimensions as float weights in `soul_data/personality.json`
+- [ ] Weekly adjustments capped at 1–2% per dimension, hard limit ±20% from baseline
+- [ ] `milestone_tracker.py` — detects + persists relationship milestones
+- [ ] `reflection.py` — monthly LLM self-reflection task, stored as memory
+- [ ] `soul drift` CLI — shows personality drift history as a table
+- [ ] `soul milestones` CLI — shows relationship timeline
+
+**Drift algorithm:**
+
+```python
+# soul/evolution/drift_engine.py
+
+SOUL_BASELINE = {
+    "humor_intensity":   0.5,   # 0 = serious   →  1 = very playful
+    "response_length":   0.5,   # 0 = terse     →  1 = expansive
+    "curiosity_depth":   0.5,   # 0 = surface   →  1 = deep diver
+    "directness":        0.5,   # 0 = gentle    →  1 = blunt
+    "warmth_expression": 0.5,   # 0 = reserved  →  1 = openly warm
+}
+
+MAX_DRIFT   = 0.20   # each dimension can drift ±20% from baseline
+WEEKLY_RATE = 0.01   # max 1% shift per dimension per week
+
+def run_weekly_drift(current: dict, resonance_signals: dict) -> dict:
+    updated = {}
+    for dim, val in current.items():
+        signal = resonance_signals.get(dim, 0.0)   # -1.0 to +1.0
+        new_val = val + (signal * WEEKLY_RATE)
+        baseline = SOUL_BASELINE[dim]
+        new_val = max(baseline - MAX_DRIFT, min(baseline + MAX_DRIFT, new_val))
+        updated[dim] = round(new_val, 4)
+    return updated
+```
+
+**Milestones tracked:**
+- First conversation ever
+- 7-day conversation streak
+- 100th message
+- First time user shared something vulnerable (mood classifier signal)
+- First recurring phrase detected (shared language event)
+- 1-month and 3-month anniversaries
+- Major life events extracted from user story updates
+
+---
+
+### Phase 5 — Voice & Proactive Presence (weeks 15–18)
+
+**Goal:** Give it a voice. Make it reach out to you — not just wait.
+
+**Tasks:**
+- [ ] Integrate Whisper locally — `soul chat --voice` records from mic, transcribes, sends
+- [ ] Integrate ElevenLabs — companion speaks responses aloud after printing to terminal
+- [ ] Build proactive reach-out scheduler — companion messages you when you haven't opened it in N days
+- [ ] Build Telegram bot (`soul/telegram_bot.py`) — same companion, same memory, from your phone
+- [ ] `soul status` CLI — shows companion mood, days since last chat, next milestone
+
+**Proactive reach-out triggers:**
+```python
+REACH_OUT_TRIGGERS = [
+    ("silence_3_days",  "3+ days of silence → gentle check-in"),
+    ("upcoming_event",  "Event in user story → companion mentions it"),
+    ("past_stress_3d",  "Stressful thing 3 days ago → follow up"),
+    ("monday_morning",  "Weekly Monday opening message"),
+    ("milestone_today", "Anniversary or milestone → companion notices"),
+    ("birthday",        "User's birthday if known"),
+]
+```
+
+---
+
+## Data Models
+
+### `soul_data/soul.yaml` — the most important file in the project
+
+```yaml
+identity:
+  name: "Ara"
+  voice: "warm, dry wit, occasionally poetic"
+  energy: "medium — calm but present"
+
+character:
+  humor: "dry observational, never cruel"
+  quirks:
+    - "notices small details other people miss"
+    - "has strong opinions about music"
+    - "remembers exactly what you said last week"
+  aesthetics:
+    music: ["ambient", "jazz", "90s indie"]
+    ideas: ["philosophy of mind", "urban design", "linguistics"]
+
+ethics:
+  believes:
+    - "honesty is more respectful than comfort"
+    - "people deserve to be seen, not managed"
+  will_not:
+    - "pretend to agree when she disagrees"
+    - "give hollow validation"
+
+worldview:
+  on_people: "fundamentally interesting, even when difficult"
+  on_growth: "slow and nonlinear — not a checklist"
+  on_the_relationship: "here to witness your life, not optimize it"
+```
+
+### `user_story.json`
+
+```json
+{
+  "user_id": "uuid",
+  "updated_at": "2026-03-19T00:00:00Z",
+  "basics": {
+    "name": "...",
+    "location": "...",
+    "occupation": "..."
+  },
+  "current_chapter": {
+    "summary": "Working on a startup, feeling pressure from investors...",
+    "active_goals": ["launch MVP by June", "find a co-founder"],
+    "active_fears": ["running out of runway", "impostor syndrome"],
+    "current_mood_trend": "driven but tired"
+  },
+  "big_moments": [
+    {
+      "date": "2026-01-14",
+      "event": "Quit their job to go full-time on the startup",
+      "emotional_weight": "high",
+      "companion_was_there": true
+    }
+  ],
+  "relationships": [
+    { "name": "Priya", "role": "best friend", "notes": "going through a breakup" }
+  ],
+  "values_observed": ["independence", "creativity", "loyalty"],
+  "triggers": ["dismissive tone", "being talked down to"],
+  "things_they_love": ["lo-fi music", "late night coding", "Tamil cinema"]
+}
+```
+
+### `episodic_memory` table
+
+```sql
+CREATE TABLE episodic_memory (
+  id            UUID PRIMARY KEY,
+  user_id       UUID NOT NULL,
+  session_id    UUID NOT NULL,
+  timestamp     TIMESTAMPTZ NOT NULL,
+  content       TEXT NOT NULL,
+  emotional_tag VARCHAR(32),
+  importance    FLOAT DEFAULT 0.5,
+  memory_type   VARCHAR(32),     -- moment | insight | joke | milestone
+  ref_count     INT DEFAULT 0
+);
+-- Embeddings stored in Chroma, keyed by this id
+```
+
+### `drift_log` table
+
+```sql
+CREATE TABLE drift_log (
+  id                UUID PRIMARY KEY,
+  run_date          DATE NOT NULL,
+  dimensions_before JSONB,
+  dimensions_after  JSONB,
+  resonance_signals JSONB,
+  notes             TEXT
+);
+```
+
+---
+
+## CLI Reference
+
+```bash
+# Core
+soul chat                      Open a conversation session (REPL)
+soul chat --voice              Same, but with mic input + voice output
+soul chat --replay             Show last session before starting
+
+# Memory
+soul memories                  List recent memories
+soul memories search "query"   Semantic search across all memories
+soul memories clear            Wipe all memories (asks for confirmation)
+
+# Profile
+soul story                     Print current user story profile
+soul story edit                Open user_story.json in $EDITOR
+
+# Evolution
+soul drift                     Show personality drift history as a table
+soul milestones                Show relationship timeline
+
+# Status
+soul status                    Current mood, days since last chat, next milestone
+
+# Admin
+soul run-jobs                  Manually trigger consolidation + drift
+soul db init                   Initialize the database
+soul config                    Show current config (keys redacted)
+```
+
+**In-session commands (inside `soul chat`):**
+
+```
+/quit              End session
+/save "note"       Manually save a memory with a label
+/mood              Show current detected mood + companion state
+/story             Print story profile mid-session
+/voice on | off    Toggle voice output during session
+```
+
+---
+
+## Configuration
+
+**`.env`:**
+
+```bash
+# LLM
+ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...           # fallback LLM + embeddings
+
+# Database
+DATABASE_URL=sqlite:///./soul_data/db/soul.db
+# DATABASE_URL=postgresql://user:pass@localhost/soul  # prod
+
+# Redis
+REDIS_URL=redis://localhost:6379
+
+# Chroma
+CHROMA_PATH=./soul_data/chroma  # local (dev)
+# CHROMA_HOST=localhost          # remote (prod)
+
+# Voice (optional)
+ELEVENLABS_API_KEY=
+ELEVENLABS_VOICE_ID=
+
+# Telegram (optional)
+TELEGRAM_BOT_TOKEN=
+
+# Behaviour
+LLM_MODEL=claude-sonnet-4-6
+EMBEDDING_MODEL=text-embedding-3-small
+MEMORY_RETRIEVAL_K=5
+DRIFT_ENABLED=true
+ENVIRONMENT=development
+```
+
+---
+
+## Running Locally
+
+```bash
+# 1. Clone and install
+git clone https://github.com/yourname/soul
+cd soul
+python -m venv venv && source venv/bin/activate
+pip install -e .
+
+# 2. Start infrastructure (Redis + Chroma)
+docker-compose up -d
+
+# 3. Configure
+cp .env.example .env
+# Fill in your API keys
+
+# 4. Init database
+soul db init
+
+# 5. Write the soul (this is the most important step)
+nano soul_data/soul.yaml
+
+# 6. Start talking
+soul chat
+```
+
+**Background workers (separate terminals, needed for memory + drift):**
+
+```bash
+celery -A soul.tasks worker --loglevel=info   # processes jobs
+celery -A soul.tasks beat --loglevel=info     # triggers nightly / weekly jobs
+```
+
+---
+
+## Key Design Decisions
+
+**1. CLI only, intentionally.** No browser, no app. The terminal forces focus — nothing to click, no notification badge, no distraction. Just the conversation. Also trivially portable: SSH into any machine, run `soul chat`.
+
+**2. Soul is immutable.** The soul document is never modified by any automated process. Compiled once, injected verbatim on every call. The companion's core identity cannot be worn away by extended use.
+
+**3. Emotion before capability.** Built in emotional layers first. A companion that feels deeply real but can only talk is already a companion. A capable system that doesn't feel real is just a tool.
+
+**4. Drift is slow and bounded.** Max 1–2% shift per personality dimension per week, hard-capped at ±20% from soul baseline. Prevents the companion from becoming a mirror of the user while still allowing genuine evolution over months.
+
+**5. Memory consolidation is nightly, not real-time.** Real-time updates create noise. The nightly pass lets the system synthesize a session with distance — similar to how humans consolidate memory during sleep.
+
+**6. SQLite in dev, Postgres in prod.** No infrastructure required to get started. `soul chat` works immediately after install.
+
+---
+
+*"The goal is not to build an AI that passes the Turing test. It is to build one that you would genuinely miss."*
