@@ -36,6 +36,7 @@ def _fallback_worker() -> None:
     from soul.evolution.reflection import generate_monthly_reflection
     from soul.tasks.consolidate import consolidate_pending_sessions
     from soul.tasks.drift_weekly import derive_resonance_signals, run_drift_task
+    from soul.tasks.hms_decay import run_hms_decay
 
     settings = get_settings()
     db.init_db(settings.database_url)
@@ -55,12 +56,15 @@ def _fallback_worker() -> None:
         )
         drift_signals = derive_resonance_signals(settings.database_url)
         run_drift_task(settings.personality_file, settings.drift_log_file, drift_signals)
+        decay_result = run_hms_decay()
         reflection_entry = generate_monthly_reflection(settings)
         print(
             "worker cycle complete: "
             f"sessions={len(results)} "
             f"memories={sum(int(item['memories_added']) for item in results)} "
             f"story_updates={sum(1 for item in results if item['story_updated'])} "
+            f"decay_updated={decay_result['updated']} "
+            f"cold_moved={decay_result['moved_to_cold']} "
             f"reflection={'1' if reflection_entry else '0'}",
             flush=True,
         )

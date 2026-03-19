@@ -10,8 +10,11 @@
 
 ## Memory
 
-- `soul memories`
-- `soul memories search "query"` (semantic, merges episodic + manual memory surfaces)
+- `soul memories` (HMS-ranked list with score bars and tiers)
+- `soul memories search "query"` (semantic retrieval reranked by HMS score)
+- `soul memories top` (top 10 vivid memories)
+- `soul memories cold` (cold-tier memory list)
+- `soul memories boost "query"` (manual HMS flag/boost)
 - `soul memories clear` (wipes SQL + episodic + optional vector-backed memory state)
 
 ## Profile

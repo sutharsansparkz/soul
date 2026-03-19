@@ -97,7 +97,12 @@ def consolidate_lines(
             emotional_tag=_infer_emotional_tag(line),
             importance=importance,
             memory_type="moment" if importance < 0.8 else "milestone",
-            metadata={"source_key": dedupe_key or ""},
+            metadata={
+                "source_key": dedupe_key or "",
+                "session_id": dedupe_key or "consolidation",
+                "user_id": (settings.user_id if settings is not None else "local-user"),
+                "timestamp": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+            },
         )
         memories_added += 1
 

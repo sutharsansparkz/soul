@@ -70,7 +70,13 @@ def generate_monthly_reflection(settings: Settings | None = None) -> ReflectionE
         emotional_tag="reflective",
         importance=0.7,
         memory_type="insight",
-        metadata={"source": "monthly_reflection", "date": entry.date},
+        metadata={
+            "source": "monthly_reflection",
+            "date": entry.date,
+            "session_id": "monthly-reflection",
+            "user_id": settings.user_id,
+            "timestamp": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        },
     )
     db.save_memory(
         settings.database_url,

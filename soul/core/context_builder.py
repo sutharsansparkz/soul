@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
 
 from soul import db
 from soul.config import Settings
@@ -76,75 +75,14 @@ class ContextBuilder:
         return "\n".join(parts) if parts else None
 
     def _memory_context(self, query: str) -> list[str]:
-        query_limit = 8
-        episodic = self.episodic_repo.search(query, limit=query_limit)
-        manual = db.search_memories(self.settings.database_url, query=query, limit=query_limit)
-        ranked = self._rank_memories(query=query, episodic=episodic, manual=manual)
-        if not ranked:
-            return []
-        top_n = min(5, len(ranked))
-        if len(ranked) >= 3:
-            top_n = max(3, top_n)
-        return [item["block"] for item in ranked[:top_n]]
+        episodic = self.episodic_repo.retrieve(
+            query=query,
+            user_id=self.settings.user_id,
+            k=self.settings.memory_retrieval_k,
+            passive=True,
+        )
+        if episodic:
+            return format_memory_blocks(episodic[: self.settings.memory_retrieval_k])
 
-    def _rank_memories(
-        self,
-        *,
-        query: str,
-        episodic,
-        manual: list[dict[str, object]],
-    ) -> list[dict[str, object]]:
-        query_tokens = {token.casefold() for token in query.split() if token.strip()}
-        candidates: list[dict[str, object]] = []
-
-        for memory in episodic:
-            timestamp = memory.metadata.get("timestamp") or memory.metadata.get("created_at")
-            block = format_memory_blocks([memory])[0]
-            candidates.append(
-                {
-                    "block": block,
-                    "text": memory.content,
-                    "importance": float(memory.importance),
-                    "timestamp": str(timestamp) if timestamp else None,
-                }
-            )
-
-        for row in manual:
-            content = str(row.get("content", ""))
-            label = str(row.get("label", "memory"))
-            candidates.append(
-                {
-                    "block": f"[memory:manual] {label}: {content}",
-                    "text": content,
-                    "importance": float(row.get("importance", 0.5)),
-                    "timestamp": str(row.get("created_at", "")) or None,
-                }
-            )
-
-        scored: list[tuple[float, dict[str, object]]] = []
-        for candidate in candidates:
-            text = str(candidate["text"])
-            text_tokens = {token.casefold() for token in text.split() if token.strip()}
-            overlap = len(query_tokens & text_tokens)
-            overlap_score = overlap / max(1, len(query_tokens))
-            substring_boost = 0.3 if query.casefold() in text.casefold() else 0.0
-            relevance = overlap_score + substring_boost
-            recency = self._recency_score(candidate.get("timestamp"))
-            importance = float(candidate["importance"])
-            score = (1.8 * relevance) + (0.8 * importance) + (0.6 * recency)
-            scored.append((score, candidate))
-
-        scored.sort(key=lambda item: item[0], reverse=True)
-        return [candidate for _, candidate in scored]
-
-    def _recency_score(self, raw_timestamp: object) -> float:
-        if raw_timestamp is None:
-            return 0.2
-        try:
-            parsed = datetime.fromisoformat(str(raw_timestamp))
-        except ValueError:
-            return 0.2
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
-        age_days = max(0.0, (datetime.now(timezone.utc) - parsed).total_seconds() / 86_400)
-        return 1.0 / (1.0 + (age_days / 30.0))
+        fallback = db.search_memories(self.settings.database_url, query=query, limit=self.settings.memory_retrieval_k)
+        return [f"[memory:manual] {item['label']}: {item['content']}" for item in fallback[: self.settings.memory_retrieval_k]]

@@ -36,6 +36,11 @@ class PostProcessor:
                 emotional_tag=mood.user_mood,
                 importance=0.65,
                 memory_type="moment",
+                metadata={
+                    "session_id": session_id,
+                    "user_id": self.settings.user_id,
+                    "timestamp": db.utcnow_iso(),
+                },
             )
             db.save_memory(
                 self.settings.database_url,
@@ -71,6 +76,7 @@ class PostProcessor:
                     "timestamp": timestamp,
                     "session_id": session_id,
                     "source": "session_end",
+                    "user_id": self.settings.user_id,
                 },
             )
             db.save_memory(

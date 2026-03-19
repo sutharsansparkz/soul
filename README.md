@@ -8,7 +8,7 @@ This repository now contains a fuller local-to-production runtime:
 - `soul chat --voice` now supports a mic-first loop: press Enter to record a turn, or type normally if you prefer. `soul chat --voice --record-seconds 5` seeds the first turn from the microphone, and `soul chat --voice-input path.wav --voice` supports file transcription plus synthesized replies when voice credentials are configured.
 - `soul db init` initializes local storage.
 - `soul memories`, `soul story`, `soul drift`, `soul milestones`, and `soul status` expose the persistence layer.
-- `soul memories search` now merges semantic episodic recall with SQL-backed manual memories, and `soul memories clear` clears all memory surfaces.
+- `soul memories` now shows HMS-ranked memory tiers with score bars; `soul memories search` reranks semantic candidates with HMS; `soul memories top|cold|boost` expose vivid/cold/manual-boost workflows; and `soul memories clear` clears all memory surfaces.
 - `soul story edit` opens the profile in your configured editor when `SOUL_EDITOR`, `VISUAL`, or `EDITOR` is set.
 - `soul telegram-bot` runs the Telegram polling surface when a bot token is configured.
 - LLM calls use Anthropic first, OpenAI second, and fall back to an offline heuristic companion response when keys are missing or unavailable.

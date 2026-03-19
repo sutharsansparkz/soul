@@ -31,6 +31,7 @@ from soul.presence.voice import VoiceBridge
 from soul.memory.user_story import UserStoryRepository
 from soul.tasks.consolidate import archive_and_purge_old_session_messages, consolidate_pending_sessions
 from soul.tasks.drift_weekly import derive_resonance_signals, run_drift_task
+from soul.tasks.hms_decay import run_hms_decay
 from soul.tasks.proactive import (
     build_reach_out_candidates,
     dispatch_reach_out_candidates,
@@ -86,10 +87,6 @@ def _print_header(soul: Soul, session_id: str, mood: MoodSnapshot | None = None)
         status = f"{status} - mood: {mood.companion_state}"
     console.print()
     console.print(Panel(status, box=box.SIMPLE, border_style="magenta"))
-
-
-def _stream_stdout(text: str) -> None:
-    print(text, end="", flush=True)
 
 
 def _render_live_reply(
@@ -195,6 +192,7 @@ def _handle_session_command(
     session_id: str,
     current_mood: MoodSnapshot | None,
     voice_enabled: bool,
+    episodic_repo: EpisodicMemoryRepository,
 ) -> tuple[bool, bool]:
     parts = shlex.split(raw_input)
     command = parts[0].casefold()
@@ -223,8 +221,23 @@ def _handle_session_command(
         if not note:
             console.print("[red]Usage:[/red] /save \"note text\"")
             return False, voice_enabled
+        emotional_tag = current_mood.user_mood if current_mood is not None else None
+        saved = episodic_repo.add_text(
+            note,
+            emotional_tag=emotional_tag,
+            importance=0.9,
+            memory_type="insight",
+            metadata={
+                "session_id": session_id,
+                "user_id": settings.user_id,
+                "flagged": True,
+                "timestamp": db.utcnow_iso(),
+                "source": "manual_save",
+            },
+        )
         db.save_memory(settings.database_url, label="manual note", content=note, session_id=session_id, importance=0.9)
-        console.print("[green]Saved to memory.[/green]")
+        score = float(saved.metadata.get("hms_score", 0.5))
+        console.print(f"[green]Saved and boosted memory.[/green] HMS={score:.2f}")
         return False, voice_enabled
 
     if command == "/voice":
@@ -238,25 +251,6 @@ def _handle_session_command(
 
     console.print(f"[red]Unknown command:[/red] {command}")
     return False, voice_enabled
-
-
-def _memory_search_score(query: str, text: str, *, importance: float, timestamp: str | None) -> float:
-    query_tokens = {token.casefold() for token in query.split() if token.strip()}
-    text_tokens = {token.casefold() for token in text.split() if token.strip()}
-    overlap = len(query_tokens & text_tokens)
-    overlap_score = overlap / max(1, len(query_tokens))
-    substring_boost = 0.4 if query.casefold() in text.casefold() else 0.0
-    recency = 0.2
-    if timestamp:
-        try:
-            parsed = datetime.fromisoformat(timestamp)
-            if parsed.tzinfo is None:
-                parsed = parsed.replace(tzinfo=timezone.utc)
-            age_days = max(0.0, (datetime.now(timezone.utc) - parsed).total_seconds() / 86_400)
-            recency = 1.0 / (1.0 + (age_days / 30.0))
-        except ValueError:
-            recency = 0.2
-    return (1.8 * overlap_score) + substring_boost + (0.8 * importance) + (0.6 * recency)
 
 
 @app.command()
@@ -276,6 +270,7 @@ def chat(
     client = LLMClient(settings, soul)
     post_processor = PostProcessor(settings)
     voice_bridge = VoiceBridge(settings)
+    episodic_repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
     current_mood: MoodSnapshot | None = None
     pending_inputs: list[str] = []
     voice_chat_mode = voice
@@ -329,6 +324,7 @@ def chat(
                     session_id=session_id,
                     current_mood=current_mood,
                     voice_enabled=voice_output_enabled,
+                    episodic_repo=episodic_repo,
                 )
                 voice_output_enabled = updated_voice_output
                 if should_quit:
@@ -392,91 +388,120 @@ def memories_list(ctx: typer.Context) -> None:
     if ctx.invoked_subcommand is not None:
         return
     settings, _ = _bootstrap()
-    manual = db.list_memories(settings.database_url)
-    episodic = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings).recent(limit=20)
-    if not manual and not episodic:
+    episodic_repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    memories = episodic_repo.list_top(limit=120)
+    if not memories:
         console.print("[dim]No memories stored yet.[/dim]")
         return
 
-    table = Table(title="Recent Memories", box=box.SIMPLE_HEAVY)
-    table.add_column("Source", style="cyan", width=10)
+    table = Table(title="Recent memories - sorted by HMS score", box=box.SIMPLE_HEAVY)
+    table.add_column("Score", style="cyan", width=8)
+    table.add_column("Bar", style="magenta", width=14)
+    table.add_column("Tier", style="magenta", width=10)
     table.add_column("When", style="cyan", width=20)
-    table.add_column("Label", style="magenta", width=18)
     table.add_column("Content", style="white")
-    for item in manual:
-        table.add_row("manual", str(item["created_at"]), str(item["label"]), str(item["content"]))
-    for item in episodic:
-        timestamp = item.metadata.get("timestamp") or item.metadata.get("created_at") or "-"
-        table.add_row("episodic", str(timestamp), str(item.memory_type), str(item.content))
+    tier_counts = {"vivid": 0, "present": 0, "fading": 0, "cold": 0}
+    for item in memories[:60]:
+        score = _record_hms_score(item)
+        tier = _record_tier(item)
+        tier_counts[tier] = tier_counts.get(tier, 0) + 1
+        timestamp = str(item.metadata.get("timestamp") or "-")
+        table.add_row(f"{score:.2f}", _score_bar(score), tier, timestamp, str(item.content))
     console.print(table)
+    console.print(
+        f"[dim]{tier_counts.get('vivid', 0)} vivid[/dim]  "
+        f"[dim]{tier_counts.get('present', 0)} present[/dim]  "
+        f"[dim]{tier_counts.get('fading', 0)} fading[/dim]  "
+        f"[dim]{tier_counts.get('cold', 0)} cold[/dim]"
+    )
 
 
 @memories_app.command("search")
 def memories_search(query: str = typer.Argument(..., help="Search text.")) -> None:
     settings, _ = _bootstrap()
     episodic_repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
-    episodic = episodic_repo.search(query, limit=8)
-    manual = db.search_memories(settings.database_url, query, limit=8)
-
-    merged: list[dict[str, object]] = []
-    for item in episodic:
-        timestamp = item.metadata.get("timestamp") or item.metadata.get("created_at")
-        merged.append(
-            {
-                "source": "episodic",
-                "label": item.memory_type,
-                "content": item.content,
-                "importance": float(item.importance),
-                "timestamp": str(timestamp) if timestamp else None,
-            }
-        )
-    for item in manual:
-        merged.append(
-            {
-                "source": "manual",
-                "label": str(item.get("label", "memory")),
-                "content": str(item.get("content", "")),
-                "importance": float(item.get("importance", 0.5)),
-                "timestamp": str(item.get("created_at", "")) or None,
-            }
-        )
-
-    deduped: dict[str, dict[str, object]] = {}
-    for item in merged:
-        key = str(item["content"]).strip().casefold()
-        if not key:
-            continue
-        existing = deduped.get(key)
-        if existing is None or float(item["importance"]) > float(existing["importance"]):
-            deduped[key] = item
-
-    ranked = sorted(
-        deduped.values(),
-        key=lambda item: _memory_search_score(
-            query,
-            str(item["content"]),
-            importance=float(item["importance"]),
-            timestamp=str(item["timestamp"]) if item["timestamp"] else None,
-        ),
-        reverse=True,
-    )
+    ranked = episodic_repo.search(query, limit=20)
     if not ranked:
+        manual = db.search_memories(settings.database_url, query, limit=10)
+        if manual:
+            table = Table(title=f'Memory Search: "{query}" (legacy fallback)', box=box.SIMPLE_HEAVY)
+            table.add_column("Source", style="cyan", width=10)
+            table.add_column("Label", style="magenta", width=16)
+            table.add_column("Content", style="white")
+            for item in manual:
+                table.add_row("manual", str(item["label"]), str(item["content"]))
+            console.print(table)
+            return
         console.print("[dim]No matching memories found.[/dim]")
         return
 
-    table = Table(title=f'Semantic Memory Search: "{query}"', box=box.SIMPLE_HEAVY)
-    table.add_column("Source", style="cyan", width=10)
-    table.add_column("Label", style="magenta", width=18)
+    table = Table(title=f'Semantic Memory Search: "{query}" (HMS reranked)', box=box.SIMPLE_HEAVY)
+    table.add_column("Score", style="cyan", width=8)
+    table.add_column("Tier", style="magenta", width=10)
     table.add_column("Content", style="white")
-    table.add_column("Importance", style="cyan", width=10)
-    for item in ranked[:12]:
+    table.add_column("Rank", style="cyan", width=8)
+    for item in ranked[:20]:
+        score = _record_hms_score(item)
+        tier = _record_tier(item)
+        rank = str(item.metadata.get("retrieval_rank", "-"))
         table.add_row(
-            str(item["source"]),
-            str(item["label"]),
-            str(item["content"]),
-            str(item["importance"]),
+            f"{score:.2f}",
+            tier,
+            str(item.content),
+            rank,
         )
     console.print(table)
+
+
+@memories_app.command("top")
+def memories_top() -> None:
+    settings, _ = _bootstrap()
+    episodic_repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    rows = episodic_repo.list_top(limit=10)
+    if not rows:
+        console.print("[dim]No memories stored yet.[/dim]")
+        return
+    table = Table(title="Top Memories (Most Vivid)", box=box.SIMPLE_HEAVY)
+    table.add_column("Score", style="cyan", width=8)
+    table.add_column("Tier", style="magenta", width=10)
+    table.add_column("Content", style="white")
+    for row in rows:
+        table.add_row(f"{_record_hms_score(row):.2f}", _record_tier(row), str(row.content))
+    console.print(table)
+
+
+@memories_app.command("cold")
+def memories_cold() -> None:
+    settings, _ = _bootstrap()
+    episodic_repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    rows = episodic_repo.list_cold(limit=50)
+    if not rows:
+        console.print("[dim]No cold memories yet.[/dim]")
+        return
+    table = Table(title="Cold Memories", box=box.SIMPLE_HEAVY)
+    table.add_column("Score", style="cyan", width=8)
+    table.add_column("When", style="cyan", width=20)
+    table.add_column("Content", style="white")
+    for row in rows:
+        table.add_row(f"{_record_hms_score(row):.2f}", str(row.metadata.get("timestamp", "-")), str(row.content))
+    console.print(table)
+
+
+@memories_app.command("boost")
+def memories_boost(query: str = typer.Argument(..., help="Query to match and boost memory.")) -> None:
+    settings, _ = _bootstrap()
+    episodic_repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    matches = episodic_repo.search(query, limit=5)
+    if not matches:
+        console.print("[dim]No matching memories found.[/dim]")
+        return
+    target = matches[0]
+    memory_id = str(target.metadata.get("memory_id", target.id))
+    before = _record_hms_score(target)
+    updated = episodic_repo.boost(memory_id)
+    after = float(updated["hms_score"]) if updated and "hms_score" in updated else before
+    console.print(f"[green]Boosted memory.[/green] {before:.2f} -> {after:.2f}")
+    console.print(f"[dim]{target.content}[/dim]")
 
 
 @memories_app.command("clear")
@@ -490,6 +515,23 @@ def memories_clear() -> None:
     deleted = db.clear_memories(settings.database_url)
     vector_deleted = episodic_repo.clear()
     console.print(f"[green]Deleted {deleted} SQL memories and {vector_deleted} episodic/vector entries.[/green]")
+
+
+def _record_hms_score(record) -> float:
+    raw = record.metadata.get("hms_score", 0.5)
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return 0.5
+
+
+def _record_tier(record) -> str:
+    return str(record.metadata.get("tier", "present"))
+
+
+def _score_bar(score: float, width: int = 12) -> str:
+    filled = int(max(0, min(width, round(score * width))))
+    return ("█" * filled) + ("░" * (width - filled))
 
 
 @story_app.callback(invoke_without_command=True)
@@ -638,6 +680,7 @@ def run_jobs() -> None:
         source="manual",
         settings=settings,
     )
+    decay = run_hms_decay()
     archive = archive_and_purge_old_session_messages(
         database_url=settings.database_url,
         archive_dir=settings.session_archive_dir,
@@ -697,6 +740,8 @@ def run_jobs() -> None:
         f"reflection={'1' if reflection_entry else '0'} "
         f"reach_outs={len(candidates)} "
         f"delivered={delivery['sent']} "
+        f"decay_updated={decay['updated']} "
+        f"cold_moved={decay['moved_to_cold']} "
         f"archived={archive['archived_sessions']} "
         f"purged={archive['purged_messages']}"
     )

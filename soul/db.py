@@ -124,12 +124,49 @@ def init_db(database: Path | str) -> None:
             exported_at TEXT NOT NULL
         )
         """,
+        """
+        CREATE TABLE IF NOT EXISTS episodic_memory (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            content TEXT NOT NULL,
+            emotional_tag TEXT,
+            memory_type TEXT DEFAULT 'moment',
+            word_count INTEGER DEFAULT 0,
+            flagged INTEGER DEFAULT 0,
+            ref_count INTEGER DEFAULT 0,
+            tier TEXT DEFAULT 'present'
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS memory_scores (
+            memory_id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            score_emotional REAL NOT NULL DEFAULT 0.5,
+            score_retrieval REAL NOT NULL DEFAULT 0.0,
+            score_temporal REAL NOT NULL DEFAULT 1.0,
+            score_flagged REAL NOT NULL DEFAULT 0.0,
+            score_volume REAL NOT NULL DEFAULT 0.3,
+            hms_score REAL NOT NULL DEFAULT 0.5,
+            last_computed TEXT NOT NULL,
+            last_retrieved TEXT,
+            decay_rate REAL DEFAULT 0.023,
+            FOREIGN KEY(memory_id) REFERENCES episodic_memory(id)
+        )
+        """,
     ]
     with engine.begin() as connection:
         if database_url.startswith("sqlite:///"):
             connection.exec_driver_sql("PRAGMA journal_mode = WAL;")
         for statement in statements:
             connection.exec_driver_sql(statement)
+        connection.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS idx_memory_scores_user_score ON memory_scores(user_id, hms_score DESC)"
+        )
+        connection.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS idx_episodic_memory_user_tier ON episodic_memory(user_id, tier, timestamp DESC)"
+        )
 
 
 def create_session(database: Path | str, companion_name: str, session_id: str | None = None) -> str:
@@ -314,6 +351,341 @@ def search_memories(database: Path | str, query: str, limit: int = 10) -> list[d
 def clear_memories(database: Path | str) -> int:
     with _get_engine(database).begin() as connection:
         result = connection.execute(text("DELETE FROM memories"))
+    return int(result.rowcount or 0)
+
+
+def create_episodic_memory(
+    database: Path | str,
+    *,
+    user_id: str,
+    session_id: str,
+    content: str,
+    timestamp: str | None = None,
+    emotional_tag: str | None = None,
+    memory_type: str = "moment",
+    word_count: int | None = None,
+    flagged: bool = False,
+    ref_count: int = 0,
+    tier: str = "present",
+    memory_id: str | None = None,
+) -> str:
+    episodic_id = memory_id or str(uuid.uuid4())
+    with _get_engine(database).begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO episodic_memory (
+                    id, user_id, session_id, timestamp, content, emotional_tag,
+                    memory_type, word_count, flagged, ref_count, tier
+                )
+                VALUES (
+                    :id, :user_id, :session_id, :timestamp, :content, :emotional_tag,
+                    :memory_type, :word_count, :flagged, :ref_count, :tier
+                )
+                """
+            ),
+            {
+                "id": episodic_id,
+                "user_id": user_id,
+                "session_id": session_id,
+                "timestamp": timestamp or utcnow_iso(),
+                "content": content,
+                "emotional_tag": emotional_tag,
+                "memory_type": memory_type,
+                "word_count": int(word_count if word_count is not None else len(content.split())),
+                "flagged": 1 if flagged else 0,
+                "ref_count": int(ref_count),
+                "tier": tier,
+            },
+        )
+    return episodic_id
+
+
+def get_episodic_memory(database: Path | str, memory_id: str) -> dict[str, object] | None:
+    with connect(database) as connection:
+        row = connection.execute(
+            text(
+                """
+                SELECT id, user_id, session_id, timestamp, content, emotional_tag, memory_type,
+                       word_count, flagged, ref_count, tier
+                FROM episodic_memory
+                WHERE id = :memory_id
+                LIMIT 1
+                """
+            ),
+            {"memory_id": memory_id},
+        ).mappings().first()
+    return dict(row) if row else None
+
+
+def list_episodic_memories(
+    database: Path | str,
+    *,
+    user_id: str | None = None,
+    include_cold: bool = True,
+    limit: int = 50,
+) -> list[dict[str, object]]:
+    predicates: list[str] = []
+    params: dict[str, object] = {"limit": limit}
+    if user_id is not None:
+        predicates.append("user_id = :user_id")
+        params["user_id"] = user_id
+    if not include_cold:
+        predicates.append("tier != 'cold'")
+    where_sql = f"WHERE {' AND '.join(predicates)}" if predicates else ""
+    with connect(database) as connection:
+        return _fetch_dicts(
+            connection,
+            f"""
+            SELECT id, user_id, session_id, timestamp, content, emotional_tag, memory_type,
+                   word_count, flagged, ref_count, tier
+            FROM episodic_memory
+            {where_sql}
+            ORDER BY timestamp DESC
+            LIMIT :limit
+            """,
+            params,
+        )
+
+
+def search_episodic_memories(
+    database: Path | str,
+    query: str,
+    *,
+    user_id: str | None = None,
+    include_cold: bool = True,
+    limit: int = 20,
+) -> list[dict[str, object]]:
+    predicates = ["lower(content) LIKE :pattern"]
+    params: dict[str, object] = {"pattern": f"%{query.casefold()}%", "limit": limit}
+    if user_id is not None:
+        predicates.append("em.user_id = :user_id")
+        params["user_id"] = user_id
+    if not include_cold:
+        predicates.append("em.tier != 'cold'")
+    with connect(database) as connection:
+        return _fetch_dicts(
+            connection,
+            f"""
+            SELECT em.id, em.user_id, em.session_id, em.timestamp, em.content, em.emotional_tag, em.memory_type,
+                   em.word_count, em.flagged, em.ref_count, em.tier, COALESCE(ms.hms_score, 0.5) AS hms_score
+            FROM episodic_memory em
+            LEFT JOIN memory_scores ms ON ms.memory_id = em.id
+            WHERE {' AND '.join(predicates)}
+            ORDER BY hms_score DESC, em.timestamp DESC
+            LIMIT :limit
+            """,
+            params,
+        )
+
+
+def list_top_episodic_memories(
+    database: Path | str,
+    *,
+    user_id: str | None = None,
+    include_cold: bool = True,
+    limit: int = 10,
+) -> list[dict[str, object]]:
+    predicates: list[str] = []
+    params: dict[str, object] = {"limit": limit}
+    if user_id is not None:
+        predicates.append("em.user_id = :user_id")
+        params["user_id"] = user_id
+    if not include_cold:
+        predicates.append("em.tier != 'cold'")
+    where_sql = f"WHERE {' AND '.join(predicates)}" if predicates else ""
+    with connect(database) as connection:
+        return _fetch_dicts(
+            connection,
+            f"""
+            SELECT em.id, em.user_id, em.session_id, em.timestamp, em.content, em.emotional_tag, em.memory_type,
+                   em.word_count, em.flagged, em.ref_count, em.tier,
+                   COALESCE(ms.score_emotional, 0.5) AS score_emotional,
+                   COALESCE(ms.score_retrieval, 0.0) AS score_retrieval,
+                   COALESCE(ms.score_temporal, 1.0) AS score_temporal,
+                   COALESCE(ms.score_flagged, 0.0) AS score_flagged,
+                   COALESCE(ms.score_volume, 0.3) AS score_volume,
+                   COALESCE(ms.hms_score, 0.5) AS hms_score,
+                   ms.last_computed,
+                   ms.last_retrieved
+            FROM episodic_memory em
+            LEFT JOIN memory_scores ms ON ms.memory_id = em.id
+            {where_sql}
+            ORDER BY hms_score DESC, em.timestamp DESC
+            LIMIT :limit
+            """,
+            params,
+        )
+
+
+def list_cold_memories(
+    database: Path | str,
+    *,
+    user_id: str | None = None,
+    limit: int = 50,
+) -> list[dict[str, object]]:
+    predicates = ["em.tier = 'cold'"]
+    params: dict[str, object] = {"limit": limit}
+    if user_id is not None:
+        predicates.append("em.user_id = :user_id")
+        params["user_id"] = user_id
+    with connect(database) as connection:
+        return _fetch_dicts(
+            connection,
+            f"""
+            SELECT em.id, em.user_id, em.session_id, em.timestamp, em.content, em.emotional_tag, em.memory_type,
+                   em.word_count, em.flagged, em.ref_count, em.tier, COALESCE(ms.hms_score, 0.5) AS hms_score
+            FROM episodic_memory em
+            LEFT JOIN memory_scores ms ON ms.memory_id = em.id
+            WHERE {' AND '.join(predicates)}
+            ORDER BY em.timestamp DESC
+            LIMIT :limit
+            """,
+            params,
+        )
+
+
+def update_episodic_memory_fields(
+    database: Path | str,
+    memory_id: str,
+    *,
+    ref_count_delta: int = 0,
+    flagged: bool | None = None,
+    tier: str | None = None,
+) -> None:
+    updates: list[str] = []
+    params: dict[str, object] = {"memory_id": memory_id}
+    if ref_count_delta:
+        updates.append("ref_count = ref_count + :ref_count_delta")
+        params["ref_count_delta"] = ref_count_delta
+    if flagged is not None:
+        updates.append("flagged = :flagged")
+        params["flagged"] = 1 if flagged else 0
+    if tier is not None:
+        updates.append("tier = :tier")
+        params["tier"] = tier
+    if not updates:
+        return
+    with _get_engine(database).begin() as connection:
+        connection.execute(
+            text(
+                f"""
+                UPDATE episodic_memory
+                SET {", ".join(updates)}
+                WHERE id = :memory_id
+                """
+            ),
+            params,
+        )
+
+
+def upsert_memory_score(
+    database: Path | str,
+    *,
+    memory_id: str,
+    user_id: str,
+    score_emotional: float,
+    score_retrieval: float,
+    score_temporal: float,
+    score_flagged: float,
+    score_volume: float,
+    hms_score: float,
+    last_computed: str | None = None,
+    last_retrieved: str | None = None,
+    decay_rate: float = 0.023,
+) -> None:
+    with _get_engine(database).begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO memory_scores (
+                    memory_id, user_id, score_emotional, score_retrieval, score_temporal,
+                    score_flagged, score_volume, hms_score, last_computed, last_retrieved, decay_rate
+                )
+                VALUES (
+                    :memory_id, :user_id, :score_emotional, :score_retrieval, :score_temporal,
+                    :score_flagged, :score_volume, :hms_score, :last_computed, :last_retrieved, :decay_rate
+                )
+                ON CONFLICT(memory_id) DO UPDATE SET
+                    user_id = excluded.user_id,
+                    score_emotional = excluded.score_emotional,
+                    score_retrieval = excluded.score_retrieval,
+                    score_temporal = excluded.score_temporal,
+                    score_flagged = excluded.score_flagged,
+                    score_volume = excluded.score_volume,
+                    hms_score = excluded.hms_score,
+                    last_computed = excluded.last_computed,
+                    last_retrieved = excluded.last_retrieved,
+                    decay_rate = excluded.decay_rate
+                """
+            ),
+            {
+                "memory_id": memory_id,
+                "user_id": user_id,
+                "score_emotional": score_emotional,
+                "score_retrieval": score_retrieval,
+                "score_temporal": score_temporal,
+                "score_flagged": score_flagged,
+                "score_volume": score_volume,
+                "hms_score": hms_score,
+                "last_computed": last_computed or utcnow_iso(),
+                "last_retrieved": last_retrieved,
+                "decay_rate": decay_rate,
+            },
+        )
+
+
+def get_memory_score(database: Path | str, memory_id: str) -> dict[str, object] | None:
+    with connect(database) as connection:
+        row = connection.execute(
+            text(
+                """
+                SELECT memory_id, user_id, score_emotional, score_retrieval, score_temporal,
+                       score_flagged, score_volume, hms_score, last_computed, last_retrieved, decay_rate
+                FROM memory_scores
+                WHERE memory_id = :memory_id
+                LIMIT 1
+                """
+            ),
+            {"memory_id": memory_id},
+        ).mappings().first()
+    return dict(row) if row else None
+
+
+def list_memory_scores_for_decay(database: Path | str, *, user_id: str | None = None) -> list[dict[str, object]]:
+    params: dict[str, object] = {}
+    where_sql = ""
+    if user_id is not None:
+        where_sql = "WHERE ms.user_id = :user_id"
+        params["user_id"] = user_id
+    with connect(database) as connection:
+        return _fetch_dicts(
+            connection,
+            f"""
+            SELECT em.id, em.user_id, em.session_id, em.timestamp, em.content, em.emotional_tag, em.memory_type,
+                   em.word_count, em.flagged, em.ref_count, em.tier,
+                   COALESCE(ms.score_emotional, 0.5) AS score_emotional,
+                   COALESCE(ms.score_retrieval, 0.0) AS score_retrieval,
+                   COALESCE(ms.score_temporal, 1.0) AS score_temporal,
+                   COALESCE(ms.score_flagged, 0.0) AS score_flagged,
+                   COALESCE(ms.score_volume, 0.3) AS score_volume,
+                   COALESCE(ms.hms_score, 0.5) AS hms_score,
+                   ms.last_computed,
+                   ms.last_retrieved,
+                   COALESCE(ms.decay_rate, 0.023) AS decay_rate
+            FROM episodic_memory em
+            LEFT JOIN memory_scores ms ON ms.memory_id = em.id
+            {where_sql}
+            ORDER BY em.timestamp ASC
+            """,
+            params,
+        )
+
+
+def delete_episodic_memories(database: Path | str) -> int:
+    with _get_engine(database).begin() as connection:
+        connection.execute(text("DELETE FROM memory_scores"))
+        result = connection.execute(text("DELETE FROM episodic_memory"))
     return int(result.rowcount or 0)
 
 

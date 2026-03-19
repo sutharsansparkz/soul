@@ -9,6 +9,7 @@ The current suite focuses on:
 - user story schema shape
 - CLI command surface
 - persona regression fixtures (20+ deterministic conversation turns)
+- HMS scoring formula, retriever reranking, and nightly decay idempotency
 
 These tests are intentionally self-contained so they can run without the application package being implemented yet.
 

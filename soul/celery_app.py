@@ -22,12 +22,17 @@ def _create_celery_app(settings: Settings):
             "soul.tasks.consolidate",
             "soul.tasks.drift_weekly",
             "soul.tasks.proactive",
+            "soul.tasks.hms_decay",
             "soul.evolution.reflection",
         ),
         beat_schedule={
             "nightly-consolidation": {
                 "task": "soul.tasks.consolidate.nightly_consolidation_task",
                 "schedule": crontab(hour=2, minute=0),
+            },
+            "nightly-hms-decay": {
+                "task": "soul.tasks.hms_decay.nightly_hms_decay_task",
+                "schedule": crontab(hour=2, minute=30),
             },
             "weekly-drift": {
                 "task": "soul.tasks.drift_weekly.weekly_drift_task",

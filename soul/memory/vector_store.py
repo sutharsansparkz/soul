@@ -17,7 +17,7 @@ class MemoryRecord:
     importance: float = 0.5
     memory_type: str = "moment"
     ref_count: int = 0
-    metadata: dict[str, str] = field(default_factory=dict)
+    metadata: dict[str, object] = field(default_factory=dict)
 
 
 class MemoryStore(Protocol):
@@ -28,6 +28,8 @@ class MemoryStore(Protocol):
     def search(self, query: str, limit: int = 5) -> list[MemoryRecord]: ...
 
     def clear(self) -> int: ...
+
+    def update(self, memory_id: str, *, metadata: dict[str, object], ref_count: int | None = None) -> None: ...
 
 
 class LocalVectorStore:
@@ -61,9 +63,12 @@ class LocalVectorStore:
         for record in self.load_all():
             text_tokens = {token.lower() for token in record.content.split() if token}
             overlap = len(tokens & text_tokens)
+            similarity = overlap / max(1, len(tokens) if tokens else 1)
             score = overlap + record.importance + math.log1p(record.ref_count)
             if query.lower() in record.content.lower():
                 score += 2.0
+                similarity = min(1.0, similarity + 0.35)
+            record.metadata["semantic_similarity"] = round(min(1.0, similarity), 4)
             scored.append((score, record))
         scored.sort(key=lambda item: item[0], reverse=True)
         return [record for _, record in scored[:limit]]
@@ -72,6 +77,23 @@ class LocalVectorStore:
         existing = self.load_all()
         self.path.write_text("", encoding="utf-8")
         return len(existing)
+
+    def update(self, memory_id: str, *, metadata: dict[str, object], ref_count: int | None = None) -> None:
+        records = self.load_all()
+        changed = False
+        for record in records:
+            if record.id != memory_id:
+                continue
+            record.metadata.update(metadata)
+            if ref_count is not None:
+                record.ref_count = int(ref_count)
+            changed = True
+            break
+        if not changed:
+            return
+        with self.path.open("w", encoding="utf-8") as handle:
+            for record in records:
+                handle.write(json.dumps(asdict(record), ensure_ascii=True) + "\n")
 
 
 class ChromaVectorStore:
@@ -100,7 +122,14 @@ class ChromaVectorStore:
                 metadatas=[metadata],
             )
         except Exception:
-            return
+            try:
+                self.collection.upsert(
+                    ids=[record.id],
+                    documents=[record.content],
+                    metadatas=[metadata],
+                )
+            except Exception:
+                return
 
     def load_all(self) -> list[MemoryRecord]:
         if self.collection is None:
@@ -124,7 +153,7 @@ class ChromaVectorStore:
                     importance=float(metadata.get("importance", 0.5)),
                     memory_type=str(metadata.get("memory_type", "moment")),
                     ref_count=int(metadata.get("ref_count", 0)),
-                    metadata={key: str(value) for key, value in metadata.items() if key not in {"emotional_tag", "importance", "memory_type", "ref_count"}},
+                    metadata={key: value for key, value in metadata.items() if key not in {"emotional_tag", "importance", "memory_type", "ref_count"}},
                 )
             )
         return records
@@ -136,7 +165,7 @@ class ChromaVectorStore:
             payload = self.collection.query(
                 query_texts=[query],
                 n_results=limit,
-                include=["documents", "metadatas"],
+                include=["documents", "metadatas", "distances"],
             )
         except Exception:
             return []
@@ -144,9 +173,13 @@ class ChromaVectorStore:
         documents = (payload.get("documents") or [[]])[0]
         metadatas = (payload.get("metadatas") or [[]])[0]
         ids = (payload.get("ids") or [[]])[0]
+        distances = (payload.get("distances") or [[]])[0]
         records: list[MemoryRecord] = []
-        for record_id, content, metadata in zip(ids, documents, metadatas):
+        for record_id, content, metadata, distance in zip(ids, documents, metadatas, distances):
             metadata = metadata or {}
+            similarity = 1.0 / (1.0 + float(distance or 0.0))
+            metadata = dict(metadata)
+            metadata["semantic_similarity"] = round(similarity, 4)
             records.append(
                 MemoryRecord(
                     id=str(record_id),
@@ -155,7 +188,7 @@ class ChromaVectorStore:
                     importance=float(metadata.get("importance", 0.5)),
                     memory_type=str(metadata.get("memory_type", "moment")),
                     ref_count=int(metadata.get("ref_count", 0)),
-                    metadata={key: str(value) for key, value in metadata.items() if key not in {"emotional_tag", "importance", "memory_type", "ref_count"}},
+                    metadata={key: value for key, value in metadata.items() if key not in {"emotional_tag", "importance", "memory_type", "ref_count"}},
                 )
             )
         return records
@@ -172,6 +205,25 @@ class ChromaVectorStore:
             return len(ids)
         except Exception:
             return 0
+
+    def update(self, memory_id: str, *, metadata: dict[str, object], ref_count: int | None = None) -> None:
+        if self.collection is None:
+            return
+        try:
+            row = self.collection.get(ids=[memory_id], include=["metadatas"])
+        except Exception:
+            return
+        metadatas = row.get("metadatas") or []
+        if not metadatas:
+            return
+        merged = dict(metadatas[0] or {})
+        merged.update(metadata)
+        if ref_count is not None:
+            merged["ref_count"] = int(ref_count)
+        try:
+            self.collection.update(ids=[memory_id], metadatas=[merged])
+        except Exception:
+            return
 
     def _build_collection(self):
         try:
@@ -238,6 +290,11 @@ class HybridVectorStore:
         if self.chroma_store is not None:
             deleted += self.chroma_store.clear()
         return deleted
+
+    def update(self, memory_id: str, *, metadata: dict[str, object], ref_count: int | None = None) -> None:
+        self.local_store.update(memory_id, metadata=metadata, ref_count=ref_count)
+        if self.chroma_store is not None:
+            self.chroma_store.update(memory_id, metadata=metadata, ref_count=ref_count)
 
 
 def build_vector_store(path: str | Path, settings: Settings | None = None) -> HybridVectorStore:
