@@ -1,0 +1,155 @@
+from __future__ import annotations
+
+from functools import lru_cache
+from pathlib import Path
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+ROOT_DIR = Path(__file__).resolve().parent.parent
+
+
+class Settings(BaseSettings):
+    anthropic_api_key: str | None = Field(default=None, alias="ANTHROPIC_API_KEY")
+    openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
+
+    database_url: str = Field(default="sqlite:///./soul_data/db/soul.db", alias="DATABASE_URL")
+    soul_data_path: str = Field(default="./soul_data", alias="SOUL_DATA_DIR")
+    redis_url: str = Field(default="redis://localhost:6379", alias="REDIS_URL")
+    chroma_path: str = Field(default="./soul_data/chroma", alias="CHROMA_PATH")
+    chroma_host: str | None = Field(default=None, alias="CHROMA_HOST")
+    chroma_enabled: bool = Field(default=False, alias="CHROMA_ENABLED")
+
+    llm_model: str = Field(default="claude-sonnet-4-6", alias="LLM_MODEL")
+    fallback_llm_model: str = Field(default="gpt-4o", alias="FALLBACK_LLM_MODEL")
+    embedding_model: str = Field(default="text-embedding-3-small", alias="EMBEDDING_MODEL")
+    memory_retrieval_k: int = Field(default=5, alias="MEMORY_RETRIEVAL_K")
+    drift_enabled: bool = Field(default=True, alias="DRIFT_ENABLED")
+    environment: str = Field(default="development", alias="ENVIRONMENT")
+    user_id: str = Field(default="local-user", alias="SOUL_USER_ID")
+    timezone_name: str = Field(default="Asia/Calcutta", alias="SOUL_TIMEZONE")
+    mood_model_name: str = Field(
+        default="cardiffnlp/twitter-roberta-base-emotion",
+        alias="MOOD_MODEL_NAME",
+    )
+    mood_model_enabled: bool = Field(default=False, alias="MOOD_MODEL_ENABLED")
+    mood_decay_hours: int = Field(default=18, alias="MOOD_DECAY_HOURS")
+    redis_key_prefix: str = Field(default="soul", alias="REDIS_KEY_PREFIX")
+
+    elevenlabs_api_key: str | None = Field(default=None, alias="ELEVENLABS_API_KEY")
+    elevenlabs_voice_id: str | None = Field(default=None, alias="ELEVENLABS_VOICE_ID")
+    telegram_bot_token: str | None = Field(default=None, alias="TELEGRAM_BOT_TOKEN")
+    telegram_chat_id: str | None = Field(default=None, alias="TELEGRAM_CHAT_ID")
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        populate_by_name=True,
+    )
+
+    @property
+    def root_dir(self) -> Path:
+        return ROOT_DIR
+
+    @property
+    def soul_data_dir(self) -> Path:
+        path = Path(self.soul_data_path)
+        if not path.is_absolute():
+            path = (ROOT_DIR / path).resolve()
+        return path
+
+    @property
+    def soul_file(self) -> Path:
+        return self.soul_data_dir / "soul.yaml"
+
+    @property
+    def personality_file(self) -> Path:
+        return self.soul_data_dir / "personality.json"
+
+    @property
+    def user_story_file(self) -> Path:
+        return self.soul_data_dir / "user_story.json"
+
+    @property
+    def drift_log_file(self) -> Path:
+        return self.soul_data_dir / "drift_log.json"
+
+    @property
+    def shared_language_file(self) -> Path:
+        return self.soul_data_dir / "shared_language.json"
+
+    @property
+    def reach_out_candidates_file(self) -> Path:
+        return self.soul_data_dir / "reach_out_candidates.json"
+
+    @property
+    def reflections_file(self) -> Path:
+        return self.soul_data_dir / "reflections.json"
+
+    @property
+    def milestones_file(self) -> Path:
+        return self.soul_data_dir / "milestones.json"
+
+    @property
+    def episodic_memory_file(self) -> Path:
+        return self.soul_data_dir / "episodic_memory.jsonl"
+
+    @property
+    def session_log_dir(self) -> Path:
+        return self.soul_data_dir / "logs"
+
+    @property
+    def latest_session_log_file(self) -> Path:
+        return self.session_log_dir / "latest_session.log"
+
+    @property
+    def consolidation_ledger_file(self) -> Path:
+        return self.soul_data_dir / "consolidation_ledger.json"
+
+    @property
+    def proactive_delivery_log_file(self) -> Path:
+        return self.soul_data_dir / "proactive_delivery_log.json"
+
+    @property
+    def sqlite_path(self) -> Path:
+        if not self.database_url.startswith("sqlite:///"):
+            raise ValueError("sqlite_path is only available when DATABASE_URL uses sqlite.")
+        raw_path = self.database_url.removeprefix("sqlite:///")
+        path = Path(raw_path)
+        if not path.is_absolute():
+            path = (ROOT_DIR / raw_path).resolve()
+        return path
+
+    @property
+    def chroma_dir(self) -> Path:
+        path = Path(self.chroma_path)
+        if not path.is_absolute():
+            path = (ROOT_DIR / path).resolve()
+        return path
+
+    @property
+    def database_is_sqlite(self) -> bool:
+        return self.database_url.startswith("sqlite:///")
+
+    def as_redacted_dict(self) -> dict[str, object]:
+        redacted = self.model_dump()
+        for key in ("anthropic_api_key", "openai_api_key", "elevenlabs_api_key", "telegram_bot_token"):
+            if redacted.get(key):
+                redacted[key] = "***redacted***"
+        redacted["root_dir"] = str(self.root_dir)
+        redacted["soul_file"] = str(self.soul_file)
+        redacted["personality_file"] = str(self.personality_file)
+        redacted["user_story_file"] = str(self.user_story_file)
+        redacted["soul_data_dir"] = str(self.soul_data_dir)
+        redacted["database_url"] = self.database_url
+        if self.database_is_sqlite:
+            redacted["sqlite_path"] = str(self.sqlite_path)
+        redacted["chroma_dir"] = str(self.chroma_dir)
+        return redacted
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    return Settings()
