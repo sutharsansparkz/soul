@@ -57,6 +57,12 @@ Note: the default Compose stack binds Redis to `127.0.0.1` only for local develo
 
 The container entrypoints for `worker` and `beat` now launch Celery directly, so the runtime matches the background job model instead of a custom polling loop.
 
+## Known limitations
+
+`get_settings()` uses `@lru_cache`, so changes to `.env` after the process starts are ignored. Restart the worker, beat, or app processes after changing any environment variable.
+
+The `drift_log` schema in `pr.txt` lists `JSONB` columns. The SQLite path stores these as `TEXT` containing valid JSON. If you migrate to PostgreSQL, alter those columns to `JSONB` manually after the initial table creation.
+
 ## Current Scope
 
 The implementation includes the main architecture from the design spec:

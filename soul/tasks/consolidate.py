@@ -209,6 +209,10 @@ def _save_ledger(path: str | Path, payload: dict[str, object]) -> None:
     file_path = Path(path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
     file_path.write_text(json.dumps(payload, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+    try:
+        file_path.chmod(0o600)
+    except OSError:
+        pass
 
 
 def _extract_user_lines(lines: list[str]) -> list[str]:

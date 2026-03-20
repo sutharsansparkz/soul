@@ -111,8 +111,9 @@ def initial_components(
     flagged: bool = False,
     now: datetime | None = None,
     half_life_days: float = 30.0,
+    score_emotional_override: float | None = None,
 ) -> HMSComponents:
-    value_emotional = score_emotional(emotional_tag)
+    value_emotional = score_emotional(emotional_tag, explicit_value=score_emotional_override)
     value_retrieval = 0.0
     value_temporal = score_temporal(memory_timestamp=memory_timestamp, now=now, half_life_days=half_life_days)
     value_flagged = 1.0 if flagged else 0.0

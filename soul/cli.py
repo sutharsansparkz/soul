@@ -52,6 +52,43 @@ app.add_typer(db_app, name="db")
 console = Console(width=120)
 
 
+def _relative_time(iso_str: str) -> str:
+    """Convert an ISO-8601 timestamp string to a human-relative label."""
+    if not iso_str or iso_str == "-":
+        return "-"
+    try:
+        dt = datetime.fromisoformat(iso_str)
+    except ValueError:
+        return iso_str
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    delta = datetime.now(timezone.utc) - dt
+    days = delta.days
+    if days < 0:
+        return "just now"
+    if days == 0:
+        hours = delta.seconds // 3600
+        if hours == 0:
+            mins = delta.seconds // 60
+            return f"{mins}m ago" if mins > 0 else "just now"
+        return f"{hours}h ago"
+    if days == 1:
+        return "yesterday"
+    if days < 7:
+        return f"{days} days ago"
+    if days < 14:
+        return "1 week ago"
+    if days < 30:
+        return f"{days // 7} weeks ago"
+    if days < 60:
+        return "1 month ago"
+    months = days // 30
+    if months < 12:
+        return f"{months} months ago"
+    years = days // 365
+    return f"{years} year{'s' if years > 1 else ''} ago"
+
+
 def _bootstrap() -> tuple[Settings, Soul]:
     settings = get_settings()
     _ensure_runtime_files(settings)
@@ -455,7 +492,7 @@ def memories_list(ctx: typer.Context) -> None:
                 "source": "episodic",
                 "score": _record_hms_score(item),
                 "tier": _record_tier(item),
-                "when": str(item.metadata.get("timestamp") or "-"),
+                "when": _relative_time(str(item.metadata.get("timestamp") or "-")),
                 "content": str(item.content),
             }
         )
@@ -468,7 +505,7 @@ def memories_list(ctx: typer.Context) -> None:
                 "source": "manual",
                 "score": _clamp01(float(item.get("importance", 0.5))),
                 "tier": "\u2014",
-                "when": str(item.get("created_at") or "-"),
+                "when": _relative_time(str(item.get("created_at") or "-")),
                 "content": f"{label}: {content}",
             }
         )
@@ -590,7 +627,11 @@ def memories_cold() -> None:
     table.add_column("When", style="cyan", width=20)
     table.add_column("Content", style="white")
     for row in rows:
-        table.add_row(f"{_record_hms_score(row):.2f}", str(row.metadata.get("timestamp", "-")), str(row.content))
+        table.add_row(
+            f"{_record_hms_score(row):.2f}",
+            _relative_time(str(row.metadata.get("timestamp", "-"))),
+            str(row.content),
+        )
     console.print(table)
 
 

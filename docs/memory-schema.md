@@ -35,6 +35,8 @@ SQLite is the canonical store for episodic memory. The local JSONL/vector store 
 - `tier` (`vivid|present|fading|cold`)
 - `embedding` (`BLOB`, optional local sentence-transformers vector)
 
+Note: the default cold threshold is 0.05 (configurable via HMS_COLD_THRESHOLD). The score ranges above reflect this default.
+
 ## `memory_fts` virtual table (SQLite FTS5)
 
 - indexed fields: `content`, `emotional_tag`, `memory_type`

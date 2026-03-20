@@ -51,4 +51,6 @@ SOUL is a terminal-first companion system with four runtime layers:
 
 - DB is initialized via `db.init_db()` with additive table/index creation plus FTS5 trigger/index setup.
 - Legacy records remain supported via backfill on retrieval (missing SQL score rows are created lazily).
-- Cold memories are retained and searchable; passive context injection excludes them.
+- Settings are process-scoped and lru-cached. Env changes require process restart.
+- PostgreSQL deployments should alter `drift_log` JSON columns to `JSONB` after first init.
+- Cold memories are retained and searchable; memories with `hms_score < 0.05` are cold and passive context injection excludes them.

@@ -64,6 +64,11 @@ class PostProcessor:
         if not pending_user_rows:
             return
 
+        fresh_state = db.get_session_memory_export_state(self.settings.database_url, session_id) or {}
+        fresh_count = int(fresh_state.get("exported_user_count") or 0)
+        if fresh_count != exported_user_count:
+            return
+
         for chunk in self._chunk_rows(pending_user_rows, size=3):
             content = " ".join(str(row["content"]).strip() for row in chunk if str(row.get("content", "")).strip()).strip()
             if not content:

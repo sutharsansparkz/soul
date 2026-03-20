@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -91,8 +92,8 @@ class VoiceBridge:
         output.parent.mkdir(parents=True, exist_ok=True)
         try:
             output.parent.chmod(0o700)
-        except OSError:
-            pass
+        except OSError as exc:
+            warnings.warn(f"Could not set permissions on {output}: {exc}")
 
         try:
             recording = sd.rec(int(seconds * sample_rate), samplerate=sample_rate, channels=1, dtype="int16")
@@ -104,8 +105,8 @@ class VoiceBridge:
                 handle.writeframes(recording.tobytes())
             try:
                 output.chmod(0o600)
-            except OSError:
-                pass
+            except OSError as exc:
+                warnings.warn(f"Could not set permissions on {output}: {exc}")
             return VoiceRecordingResult(ok=True, output_path=str(output), backend="sounddevice")
         except Exception as exc:
             return VoiceRecordingResult(ok=False, output_path=None, backend="sounddevice", error=str(exc))
@@ -123,8 +124,8 @@ class VoiceBridge:
         output.parent.mkdir(parents=True, exist_ok=True)
         try:
             output.parent.chmod(0o700)
-        except OSError:
-            pass
+        except OSError as exc:
+            warnings.warn(f"Could not set permissions on {output}: {exc}")
 
         payload = json.dumps(
             {
@@ -150,8 +151,8 @@ class VoiceBridge:
                 output.write_bytes(response.read())
             try:
                 output.chmod(0o600)
-            except OSError:
-                pass
+            except OSError as exc:
+                warnings.warn(f"Could not set permissions on {output}: {exc}")
             return VoiceSynthesisResult(ok=True, output_path=str(output), backend="elevenlabs")
         except URLError as exc:
             return VoiceSynthesisResult(ok=False, output_path=None, backend="elevenlabs", error=str(exc))

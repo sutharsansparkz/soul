@@ -32,6 +32,10 @@ def save_reach_out_candidates(path: str | Path, candidates: list[ReachOutCandida
     file_path = Path(path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
     file_path.write_text(json.dumps([asdict(candidate) for candidate in candidates], indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+    try:
+        file_path.chmod(0o600)
+    except OSError:
+        pass
 
 
 def load_delivery_log(path: str | Path) -> dict[str, object]:
@@ -48,6 +52,10 @@ def save_delivery_log(path: str | Path, payload: dict[str, object]) -> None:
     file_path = Path(path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
     file_path.write_text(json.dumps(payload, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+    try:
+        file_path.chmod(0o600)
+    except OSError:
+        pass
 
 
 def build_reach_out_candidates(

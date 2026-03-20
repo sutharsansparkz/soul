@@ -73,6 +73,10 @@ class DriftLogRepository:
     def save(self, runs: list[DriftRun]) -> None:
         payload = [asdict(run) for run in runs]
         self.path.write_text(json.dumps(payload, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+        try:
+            self.path.chmod(0o600)
+        except OSError:
+            pass
 
 
 def _is_iso_date(value: object) -> bool:

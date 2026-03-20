@@ -50,12 +50,14 @@ class EpisodicMemoryRepository:
         flagged = bool(metadata.get("flagged", False))
         word_count = len(content.split())
         half_life_days = float(getattr(self.settings, "hms_decay_halflife_days", 30.0))
+        score_override = importance if importance != 0.5 else None
         components = initial_components(
             emotional_tag=emotional_tag,
             memory_timestamp=timestamp,
             word_count=word_count,
             flagged=flagged,
             half_life_days=half_life_days,
+            score_emotional_override=score_override,
         )
 
         db.create_episodic_memory(

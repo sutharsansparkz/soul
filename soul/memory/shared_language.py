@@ -26,6 +26,10 @@ class SharedLanguageStore:
     def save(self, entries: list[SharedLanguageEntry]) -> None:
         payload = [asdict(entry) for entry in entries]
         self.path.write_text(json.dumps(payload, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+        try:
+            self.path.chmod(0o600)
+        except OSError:
+            pass
 
     def register(self, phrase: str, meaning: str = "") -> SharedLanguageEntry:
         entries = self.load()

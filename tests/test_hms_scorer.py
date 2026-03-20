@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from soul import db
+from soul.config import Settings
+from soul.memory.episodic import EpisodicMemoryRepository
 from soul.memory.scorer import (
     boosted_components,
     compute_composite,
@@ -73,3 +76,25 @@ def test_recompute_applies_temporal_decay():
     )
     assert recent.score_temporal > old.score_temporal
     assert recent.hms_score > old.hms_score
+
+
+def test_add_text_uses_importance_as_emotional_override(tmp_path):
+    settings = Settings(
+        database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
+        soul_data_path=str(tmp_path / "soul_data"),
+    )
+    db.init_db(settings.database_url)
+    repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+
+    record = repo.add_text(
+        "neutral memory that should still be important",
+        emotional_tag="neutral",
+        importance=0.9,
+        metadata={"session_id": "s1", "user_id": settings.user_id, "timestamp": "2026-03-19T10:00:00+00:00"},
+    )
+
+    memory_id = str(record.metadata.get("memory_id", record.id))
+    score = db.get_memory_score(settings.database_url, memory_id)
+
+    assert score is not None
+    assert float(score["score_emotional"]) == 0.9

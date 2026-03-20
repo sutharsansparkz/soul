@@ -28,4 +28,8 @@ class MilestoneTracker:
         items = self.load()
         items.append(milestone)
         self.path.write_text(json.dumps([asdict(item) for item in items], indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+        try:
+            self.path.chmod(0o600)
+        except OSError:
+            pass
         return milestone

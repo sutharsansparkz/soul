@@ -78,6 +78,10 @@ class UserStoryRepository:
     def save(self, story: UserStory) -> None:
         payload = asdict(story)
         self.path.write_text(json.dumps(payload, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+        try:
+            self.path.chmod(0o600)
+        except OSError:
+            pass
 
 
 def ensure_story_defaults(story: UserStory) -> UserStory:

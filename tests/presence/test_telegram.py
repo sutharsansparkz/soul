@@ -48,6 +48,31 @@ def test_telegram_client_uses_payload_and_opener():
     assert b'"parse_mode": "Markdown"' in captured["data"]
 
 
+def test_telegram_client_get_updates_uses_extra_http_timeout():
+    captured = {}
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return b'{"ok": true, "result": []}'
+
+    def opener(request, timeout=None):
+        captured["timeout"] = timeout
+        return Response()
+
+    client = TelegramClient(token="abc123", opener=opener)
+
+    result = client.get_updates(timeout=15)
+
+    assert result == []
+    assert captured["timeout"] == 35
+
+
 def test_telegram_client_returns_not_ok_when_api_returns_ok_false():
     class Response:
         def __enter__(self):
@@ -67,6 +92,8 @@ def test_telegram_client_returns_not_ok_when_api_returns_ok_false():
     result = client.send_message(42, "hello")
 
     assert result.ok is False
+    assert result.error is not None
+    assert result.error == "telegram_error: Bad Request"
 
 
 def test_bot_runner_parses_updates():

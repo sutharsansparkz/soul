@@ -359,8 +359,8 @@ A highly emotional memory from 6 months ago will still surface if it's relevant 
 |---|---|---|
 | **Vivid** | 0.75 – 1.0 | Always eligible for passive retrieval. Companion references naturally. |
 | **Present** | 0.40 – 0.74 | Surfaced when semantically relevant. Normal retrieval. |
-| **Fading** | 0.15 – 0.39 | Only retrieved if directly relevant. Companion may acknowledge it's fuzzy. |
-| **Cold** | 0.00 – 0.14 | Moved to cold store. Never passive. Retrievable only by explicit `/memories search`. |
+| **Fading** | 0.05 – 0.39 | Only retrieved if directly relevant. Companion may acknowledge it's fuzzy. |
+| **Cold** | 0.00 – 0.04 | Moved to cold store. Never passive. Retrievable only by explicit `/memories search`. |
 
 ### Score CLI output
 

@@ -14,7 +14,7 @@ from soul.presence.runtime import PresenceRuntime, PresenceTurnResult
 
 
 JsonDict = dict[str, object]
-_HTTP_TIMEOUT_SECONDS: int = 30
+_HTTP_TIMEOUT_SECONDS: int = 40
 
 
 @dataclass(slots=True)
@@ -47,6 +47,7 @@ class TelegramClient:
         self.token = token or ""
         self.base_url = base_url.rstrip("/")
         self._open = opener or urlopen
+        # _timeout applies to _post/send_message; get_updates computes its own long-poll timeout.
         self._timeout = timeout
 
     @property
@@ -71,8 +72,10 @@ class TelegramClient:
         try:
             self._post("sendMessage", payload)
             return TelegramSendResult(ok=True, chat_id=chat_id, message=text)
+        except URLError as exc:
+            return TelegramSendResult(ok=False, chat_id=chat_id, message=text, error=f"telegram_error: {exc.reason}")
         except Exception as exc:
-            return TelegramSendResult(ok=False, chat_id=chat_id, message=text, error=str(exc))
+            return TelegramSendResult(ok=False, chat_id=chat_id, message=text, error=f"unexpected: {exc}")
 
     def get_updates(self, *, offset: int | None = None, timeout: int = 10) -> list[JsonDict]:
         if not self.enabled:
@@ -82,7 +85,8 @@ class TelegramClient:
         if offset is not None:
             params["offset"] = offset
         request = Request(f"{self.api_root}/getUpdates?{urlencode(params)}", method="GET")
-        with self._open(request, self._timeout) as response:
+        http_timeout = timeout + 20
+        with self._open(request, http_timeout) as response:
             payload = json.loads(response.read().decode("utf-8"))
         return list(payload.get("result", []))
 

@@ -212,3 +212,14 @@ def test_process_session_end_exports_only_new_user_rows(tmp_path):
     assert len(second_export) == 2
     assert export_state is not None
     assert int(export_state["exported_user_count"]) == 2
+
+    processor.process_session_end(session_id=session_id)
+
+    third_export = db.list_episodic_memories(
+        settings.database_url,
+        user_id=settings.user_id,
+        include_cold=True,
+        limit=20,
+    )
+
+    assert len(third_export) == 2
