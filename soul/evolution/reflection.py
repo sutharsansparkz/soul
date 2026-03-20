@@ -60,15 +60,26 @@ def generate_monthly_reflection(settings: Settings | None = None) -> ReflectionE
     client = LLMClient(settings, soul)
     recent_milestones = db.list_milestones(settings.database_url, limit=5)
     recent_memories = db.list_memories(settings.database_url, limit=5)
+    recent_episodic = db.list_top_episodic_memories(
+        settings.database_url,
+        user_id=settings.user_id,
+        include_cold=False,
+        limit=5,
+    )
 
-    prompt = _build_reflection_prompt(story, recent_milestones, recent_memories)
+    prompt = _build_reflection_prompt(story, recent_milestones, recent_memories, recent_episodic)
     result = client.complete_text(
         system_prompt=compile_system_prompt(soul)
         + "\n\nWrite a brief self-reflection as the companion. Return strict JSON with keys summary and insights.",
         user_prompt=prompt,
     )
 
-    entry = _parse_reflection_response(result.text) or _fallback_reflection(story, recent_milestones, recent_memories)
+    entry = _parse_reflection_response(result.text) or _fallback_reflection(
+        story,
+        recent_milestones,
+        recent_memories,
+        recent_episodic,
+    )
     entry.date = today.isoformat()
     repo.append(entry)
 
@@ -100,9 +111,18 @@ def _build_reflection_prompt(
     story,
     milestones: list[dict[str, object]],
     memories: list[dict[str, object]],
+    episodic_memories: list[dict[str, object]],
 ) -> str:
     milestone_text = "\n".join(f"- {item['occurred_at']}: {item['note']}" for item in milestones) or "- none"
     memory_text = "\n".join(f"- {item['label']}: {item['content']}" for item in memories) or "- none"
+    episodic_text = (
+        "\n".join(
+            f"- [{item.get('emotional_tag') or 'unknown'}] {item.get('content') or ''}".strip()
+            for item in episodic_memories
+            if str(item.get("content") or "").strip()
+        )
+        or "- none"
+    )
     story_summary = story.current_chapter.get("summary", "") if story.current_chapter else ""
     return (
         "Reflect on the recent relationship with the user.\n"
@@ -110,6 +130,7 @@ def _build_reflection_prompt(
         f"Observed values: {', '.join(story.values_observed) if story.values_observed else 'none'}\n"
         f"Milestones:\n{milestone_text}\n"
         f"Recent memories:\n{memory_text}\n"
+        f"Episodic memories (vivid):\n{episodic_text}\n"
         "Return JSON only."
     )
 
@@ -130,13 +151,15 @@ def _parse_reflection_response(text: str) -> ReflectionEntry | None:
     return ReflectionEntry(date="", summary=summary, insights=insights[:5])
 
 
-def _fallback_reflection(story, milestones, memories) -> ReflectionEntry:
+def _fallback_reflection(story, milestones, memories, episodic_memories) -> ReflectionEntry:
     summary_bits = []
     if story.current_chapter and story.current_chapter.get("summary"):
         summary_bits.append(str(story.current_chapter["summary"]))
     if milestones:
         summary_bits.append(f"Recent milestone: {milestones[-1]['note']}")
-    if memories:
+    if episodic_memories:
+        summary_bits.append(f"Memory that lingers: {episodic_memories[0]['content']}")
+    elif memories:
         summary_bits.append(f"Memory that lingers: {memories[0]['content']}")
     summary = " ".join(summary_bits)[:320].strip() or "I am still learning the shape of this relationship."
     insights = [

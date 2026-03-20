@@ -215,6 +215,7 @@ class EpisodicMemoryRepository:
         rows = db.list_memory_scores_for_decay(self.settings.database_url, user_id=self.settings.user_id)
         updated = 0
         moved_to_cold = 0
+        updates: list[dict] = []
         for row in rows:
             memory_id = str(row["id"])
             previous_tier = str(row.get("tier", "present"))
@@ -249,18 +250,21 @@ class EpisodicMemoryRepository:
                 last_retrieved=row.get("last_retrieved"),
                 decay_rate=components.decay_rate,
             )
-            self.store.update(
-                memory_id,
-                metadata={
-                    "hms_score": round(components.hms_score, 4),
-                    "tier": components.tier,
-                    "last_computed": now_iso,
-                },
-                ref_count=int(row.get("ref_count") or 0),
+            updates.append(
+                {
+                    "memory_id": memory_id,
+                    "metadata": {
+                        "hms_score": round(components.hms_score, 4),
+                        "tier": components.tier,
+                        "last_computed": now_iso,
+                    },
+                    "ref_count": int(row.get("ref_count") or 0),
+                }
             )
             updated += 1
             if previous_tier != "cold" and components.tier == "cold":
                 moved_to_cold += 1
+        self.store.bulk_update(updates)
         return {"updated": updated, "moved_to_cold": moved_to_cold}
 
     def clear(self) -> int:

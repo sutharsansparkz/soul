@@ -1,0 +1,6 @@
+[
+  {
+    "trigger": "silence_3_days",
+    "message": "Checking in from the nightly job."
+  }
+]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import warnings
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -14,6 +15,8 @@ from soul.memory.episodic import EpisodicMemoryRepository
 from soul.memory.shared_language import SharedLanguageStore
 from soul.memory.user_story import BigMoment, UserStoryRepository, apply_story_observations, ensure_story_defaults, infer_mood_trend
 from soul.tasks import celery_app
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -110,6 +113,9 @@ def consolidate_lines(
 
     story_repo = UserStoryRepository(story_path)
     story = story_repo.load()
+    resolved_user_id = resolved_settings.user_id
+    if not story.user_id or story.user_id in ("unknown", ""):
+        story.user_id = resolved_user_id
     story_updated = False
     llm_insights: StructuredSessionInsights | None = None
     if user_lines:
@@ -277,6 +283,10 @@ def _extract_structured_insights(user_lines: list[str], settings: Settings) -> S
     try:
         soul = load_soul(settings.soul_file)
         client = LLMClient(settings, soul)
+    except Exception:
+        return None
+
+    try:
         result = client.complete_text(
             system_prompt=(
                 compile_system_prompt(soul)
@@ -291,12 +301,12 @@ def _extract_structured_insights(user_lines: list[str], settings: Settings) -> S
                 + "\n".join(f"- {line}" for line in user_lines)
             ),
         )
-    except Exception:
+        if result.provider == "offline":
+            return None
+        return _parse_structured_insights(result.text)
+    except Exception as exc:
+        logger.warning("Structured insight extraction failed: %s", exc, exc_info=True)
         return None
-
-    if result.provider == "offline":
-        return None
-    return _parse_structured_insights(result.text)
 
 
 def _parse_structured_insights(text: str) -> StructuredSessionInsights | None:

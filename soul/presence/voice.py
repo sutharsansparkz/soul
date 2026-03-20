@@ -65,6 +65,14 @@ class VoiceBridge:
     def elevenlabs_enabled(self) -> bool:
         return bool(self.settings.elevenlabs_api_key and self.settings.elevenlabs_voice_id)
 
+    @property
+    def can_record(self) -> bool:
+        try:
+            import sounddevice  # noqa: F401
+            return True
+        except Exception:
+            return False
+
     def transcribe(self, audio_path: str | Path, *, model: str = "base") -> VoiceTranscriptionResult:
         path = Path(audio_path)
         if not path.exists():
@@ -169,7 +177,35 @@ class VoiceBridge:
 
         try:
             with self._open(request, _HTTP_TIMEOUT_SECONDS) as response:
-                output.write_bytes(response.read())
+                content_type = ""
+                if hasattr(response, "headers") and response.headers:
+                    content_type = response.headers.get("Content-Type", "")
+                audio_bytes = response.read()
+
+            if not audio_bytes:
+                return VoiceSynthesisResult(
+                    ok=False,
+                    output_path=None,
+                    backend="elevenlabs",
+                    error="empty ElevenLabs response",
+                    played=False,
+                )
+
+            if content_type and not content_type.lower().startswith("audio/"):
+                warnings.warn(
+                    f"ElevenLabs returned unexpected content-type: {content_type!r}. "
+                    "Response may be an error page.",
+                    stacklevel=2,
+                )
+                return VoiceSynthesisResult(
+                    ok=False,
+                    output_path=None,
+                    backend="elevenlabs",
+                    error=f"unexpected ElevenLabs content-type: {content_type}",
+                    played=False,
+                )
+
+            output.write_bytes(audio_bytes)
             try:
                 output.chmod(0o600)
             except OSError as exc:

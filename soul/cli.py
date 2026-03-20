@@ -29,7 +29,7 @@ from soul.evolution.reflection import generate_monthly_reflection
 from soul.memory.episodic import EpisodicMemoryRepository
 from soul.presence.telegram import TelegramBotRunner
 from soul.presence.voice import VoiceBridge
-from soul.memory.user_story import UserStoryRepository
+from soul.memory.user_story import UserStory, UserStoryRepository
 from soul.tasks.consolidate import archive_and_purge_old_session_messages, consolidate_pending_sessions
 from soul.tasks.drift_weekly import derive_resonance_signals, run_drift_task
 from soul.tasks.hms_decay import run_hms_decay
@@ -371,6 +371,12 @@ def chat(
     pending_inputs: list[str] = []
     voice_chat_mode = voice
     voice_output_enabled = voice
+    if voice_chat_mode and not getattr(voice_bridge, "can_record", True):
+        console.print(
+            "[yellow]Microphone recording unavailable (sounddevice not installed). "
+            "Voice mode active for output only - type your input normally.[/yellow]"
+        )
+        voice_chat_mode = False
     voice_record_seconds = record_seconds if record_seconds > 0 else (6 if voice_chat_mode else 0)
 
     if voice_input:
@@ -730,7 +736,15 @@ def story_edit() -> None:
     story_file = settings.user_story_file
     story_file.parent.mkdir(parents=True, exist_ok=True)
     if not story_file.exists():
-        story_file.write_text("{}\n", encoding="utf-8")
+        repo = UserStoryRepository(story_file)
+        default = UserStory()
+        default.current_chapter = {
+            "summary": "",
+            "active_goals": [],
+            "active_fears": [],
+            "current_mood_trend": "forming",
+        }
+        repo.save(default)
 
     editor = os.environ.get("SOUL_EDITOR") or os.environ.get("VISUAL") or os.environ.get("EDITOR")
 
@@ -771,11 +785,11 @@ def milestones() -> None:
         console.print("[dim]No milestones recorded yet.[/dim]")
         return
     table = Table(title="Relationship Timeline", box=box.SIMPLE_HEAVY)
-    table.add_column("When", style="cyan", width=20)
+    table.add_column("When", style="cyan", width=16)
     table.add_column("Kind", style="magenta", width=24)
     table.add_column("Note", style="white")
     for row in rows:
-        table.add_row(str(row["occurred_at"]), str(row["kind"]), str(row["note"]))
+        table.add_row(_relative_time(str(row["occurred_at"])), str(row["kind"]), str(row["note"]))
     console.print(table)
 
 
@@ -791,14 +805,14 @@ def status() -> None:
     total_messages = db.count_messages(settings.database_url)
     presence_context = build_presence_context(settings.database_url, settings)
 
-    candidates = build_reach_out_candidates(
+    _ = build_reach_out_candidates(
         days_since_last_chat=presence_context["days_since_last_chat"],
         story=story_repo.load(),
         today=now,
         stress_signal_dates=presence_context["stress_signal_dates"],
         milestones_today=presence_context["milestones_today"],
     )
-    save_reach_out_candidates(settings.reach_out_candidates_file, candidates)
+    queued_candidates = load_reach_out_candidates(settings.reach_out_candidates_file)
 
     current_state = mood_engine.current_state(settings.user_id) or {}
     mood_state = current_state.get("state") or db.get_last_companion_state(settings.database_url) or "no sessions yet"
@@ -815,7 +829,7 @@ def status() -> None:
         "never" if presence_context["days_since_last_chat"] is None else str(presence_context["days_since_last_chat"]),
     )
     table.add_row("Companion mood", str(mood_state))
-    table.add_row("Reach-out candidates", str(len(load_reach_out_candidates(settings.reach_out_candidates_file))))
+    table.add_row("Reach-out candidates", str(len(queued_candidates)))
     table.add_row("Voice", voice_bridge.status()["voice"])
     table.add_row("Telegram", telegram_runner.status()["telegram"])
     table.add_row("Next milestone", _next_milestone_label(settings, total_messages))
@@ -902,6 +916,14 @@ def db_init() -> None:
     _ensure_runtime_files(settings)
     db.init_db(settings.database_url)
     console.print(f"[green]Initialized database at {settings.redacted_database_url}[/green]")
+
+
+@db_app.command("rebuild-fts")
+def db_rebuild_fts() -> None:
+    """Rebuild the SQLite FTS5 memory search index from scratch."""
+    settings = get_settings()
+    db.rebuild_memory_fts(settings.database_url)
+    console.print("[green]FTS5 memory index rebuilt successfully.[/green]")
 
 
 @app.command()

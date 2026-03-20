@@ -40,6 +40,8 @@ class MemoryStore(Protocol):
 
     def update(self, memory_id: str, *, metadata: dict[str, object], ref_count: int | None = None) -> None: ...
 
+    def bulk_update(self, updates: list[dict]) -> None: ...
+
 
 class LocalVectorStore:
     """Stable lexical fallback that works without external services."""
@@ -126,6 +128,27 @@ class LocalVectorStore:
             break
         if not changed:
             return
+        with self.path.open("w", encoding="utf-8") as handle:
+            for record in records:
+                handle.write(json.dumps(asdict(record), ensure_ascii=True) + "\n")
+
+    def bulk_update(self, updates: list[dict]) -> None:
+        records = self.load_all()
+        update_map = {
+            str(update.get("memory_id", "")): update
+            for update in updates
+            if str(update.get("memory_id", ""))
+        }
+        for record in records:
+            update = update_map.get(record.id)
+            if update is None:
+                continue
+            metadata = update.get("metadata") or {}
+            if isinstance(metadata, dict):
+                record.metadata.update(metadata)
+            ref_count = update.get("ref_count", None)
+            if ref_count is not None:
+                record.ref_count = int(ref_count)
         with self.path.open("w", encoding="utf-8") as handle:
             for record in records:
                 handle.write(json.dumps(asdict(record), ensure_ascii=True) + "\n")

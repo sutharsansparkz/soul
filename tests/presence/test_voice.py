@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 import socket
 from pathlib import Path
 from urllib.error import URLError
@@ -45,6 +46,72 @@ def test_voice_bridge_speak_handles_timeout(tmp_path):
 
     assert result.ok is False
     assert result.error is not None
+
+
+def test_voice_bridge_speak_rejects_empty_response(tmp_path):
+    class EmptyResponse:
+        headers = {"Content-Type": "audio/mpeg"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):  # noqa: ANN001
+            return False
+
+        def read(self):
+            return b""
+
+    def empty_opener(request, timeout=None):  # noqa: ARG001
+        return EmptyResponse()
+
+    settings = Settings(
+        database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
+        soul_data_path=str(tmp_path / "soul_data"),
+        elevenlabs_api_key="fake-key",
+        elevenlabs_voice_id="fake-voice",
+    )
+    bridge = VoiceBridge(settings, opener=empty_opener)
+    output_path = tmp_path / "latest.mp3"
+    result = bridge.speak("hello", output_path=output_path)
+
+    assert result.ok is False
+    assert result.error == "empty ElevenLabs response"
+    assert not output_path.exists()
+
+
+def test_voice_bridge_speak_rejects_html_response(tmp_path):
+    class HtmlResponse:
+        headers = {"Content-Type": "text/html"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):  # noqa: ANN001
+            return False
+
+        def read(self):
+            return b"<html><body>error</body></html>"
+
+    def html_opener(request, timeout=None):  # noqa: ARG001
+        return HtmlResponse()
+
+    settings = Settings(
+        database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
+        soul_data_path=str(tmp_path / "soul_data"),
+        elevenlabs_api_key="fake-key",
+        elevenlabs_voice_id="fake-voice",
+    )
+    bridge = VoiceBridge(settings, opener=html_opener)
+    output_path = tmp_path / "latest.mp3"
+
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always")
+        result = bridge.speak("hello", output_path=output_path)
+
+    assert result.ok is False
+    assert "unexpected ElevenLabs content-type" in result.error
+    assert not output_path.exists()
+    assert any("unexpected content-type" in str(item.message) for item in captured)
 
 
 def test_voice_bridge_play_returns_false_when_no_player_found(monkeypatch, tmp_path):
