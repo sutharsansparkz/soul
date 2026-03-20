@@ -6,6 +6,42 @@ from pathlib import Path
 from soul.config import Settings
 
 
+def _called_name(node: ast.AST) -> str:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return ""
+
+
+class _ImportTimeGetSettingsVisitor(ast.NodeVisitor):
+    """Inspect statements that execute at import time, but skip function/class bodies."""
+
+    def __init__(self) -> None:
+        self.found = False
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        return
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        return
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        return
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        if isinstance(node.value, ast.Call) and _called_name(node.value.func) == "get_settings":
+            self.found = True
+            return
+        self.generic_visit(node)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        if isinstance(node.value, ast.Call) and _called_name(node.value.func) == "get_settings":
+            self.found = True
+            return
+        self.generic_visit(node)
+
+
 def test_hms_config_knobs_are_exposed():
     settings = Settings(
         hybrid_embeddings=True,
@@ -52,16 +88,6 @@ def test_get_settings_is_not_called_at_module_level():
             tree = ast.parse(source)
         except SyntaxError:
             continue
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Assign):
-                for target in node.targets:
-                    if isinstance(node.value, ast.Call):
-                        func = node.value.func
-                        name = (
-                            func.id if isinstance(func, ast.Name)
-                            else func.attr if isinstance(func, ast.Attribute)
-                            else ""
-                        )
-                        assert name != "get_settings", (
-                            f"Module-level get_settings() call found in {py_file}"
-                        )
+        visitor = _ImportTimeGetSettingsVisitor()
+        visitor.visit(tree)
+        assert not visitor.found, f"Module-level get_settings() call found in {py_file}"
