@@ -109,5 +109,7 @@ def test_retriever_exposes_bm25_metadata_from_sqlite_fts(tmp_path):
         passive=True,
     )
     assert rows
+    assert "bm25_raw" in rows[0].metadata
     assert "bm25_score" in rows[0].metadata
     assert "bm25_similarity" in rows[0].metadata
+    assert 0.0 <= float(rows[0].metadata["bm25_score"]) <= 1.0

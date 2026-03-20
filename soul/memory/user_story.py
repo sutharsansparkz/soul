@@ -231,10 +231,14 @@ def _capture_after(original: str, lowered: str, marker: str) -> str | None:
     if marker not in lowered:
         return None
     start = lowered.index(marker) + len(marker)
-    value = original[start:].strip().strip(".")
+    value = original[start:].strip()
     if not value:
         return None
-    return value.splitlines()[0][:120].strip(" ,.!?")
+    value = value.splitlines()[0]
+    match = re.search(r"[.!?]", value)
+    if match:
+        value = value[: match.start()]
+    return value[:120].strip(" ,.!?") or None
 
 
 def _extract_relationship(text: str) -> dict[str, str] | None:

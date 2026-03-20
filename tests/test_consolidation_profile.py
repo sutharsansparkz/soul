@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import pytest
 
 from soul import db
 from soul.config import Settings
@@ -87,3 +88,14 @@ def test_consolidate_lines_uses_provided_settings_for_memory_writes(tmp_path):
     assert result.memories_added >= 1
     rows = db.list_episodic_memories(settings.database_url, user_id=settings.user_id, include_cold=True, limit=20)
     assert rows
+
+
+def test_consolidate_lines_does_not_write_memories_when_no_user_prefix(tmp_path):
+    with pytest.warns(UserWarning, match="No user:/you: prefixes found"):
+        result = consolidate_lines(
+            ["This line has no role prefix.", "Neither does this one."],
+            story_path=tmp_path / "story.json",
+            memory_path=tmp_path / "mem.jsonl",
+        )
+
+    assert result.memories_added == 0

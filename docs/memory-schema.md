@@ -20,6 +20,8 @@ Database bootstrap also performs additive HMS column migrations for legacy SQLit
 
 ## `episodic_memory` table
 
+SQLite is the canonical store for episodic memory. The local JSONL/vector store is a fallback cache surface and may be missing entries if a cache write fails after the SQL write succeeds.
+
 - `id` (pk)
 - `user_id`
 - `session_id`

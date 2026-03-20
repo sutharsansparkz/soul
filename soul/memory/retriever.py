@@ -90,7 +90,8 @@ class MemoryRetriever:
                 bm25_score = float(row_hint.get("bm25_score", 0.0))
                 bm25_component = bm25_similarity.get(memory_id, 0.0)
                 semantic_similarity = bm25_component
-                record.metadata["bm25_score"] = f"{bm25_score:.4f}"
+                record.metadata["bm25_raw"] = f"{bm25_score:.4f}"
+                record.metadata["bm25_score"] = f"{bm25_component:.4f}"
                 record.metadata["bm25_similarity"] = f"{bm25_component:.4f}"
 
                 candidate_embedding = self.embedder.decode_blob(row_hint.get("embedding"))

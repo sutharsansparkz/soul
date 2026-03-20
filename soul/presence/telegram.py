@@ -71,7 +71,7 @@ class TelegramClient:
         try:
             self._post("sendMessage", payload)
             return TelegramSendResult(ok=True, chat_id=chat_id, message=text)
-        except URLError as exc:
+        except Exception as exc:
             return TelegramSendResult(ok=False, chat_id=chat_id, message=text, error=str(exc))
 
     def get_updates(self, *, offset: int | None = None, timeout: int = 10) -> list[JsonDict]:
@@ -112,7 +112,8 @@ class TelegramBotRunner:
     ) -> None:
         self.settings = settings or get_settings()
         self.runtime = runtime or PresenceRuntime(self.settings)
-        self.telegram = telegram_client or TelegramClient(self.settings.telegram_bot_token)
+        token = self.settings.telegram_bot_token.get_secret_value() if self.settings.telegram_bot_token else None
+        self.telegram = telegram_client or TelegramClient(token)
 
     def status(self) -> dict[str, str]:
         allowed_chat_id = self._configured_chat_id()

@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 import socket
 from types import SimpleNamespace
 from urllib.error import URLError
@@ -141,3 +140,26 @@ def test_telegram_client_raises_urlerror_on_timeout():
 
     assert result.ok is False
     assert result.error is not None
+
+
+def test_telegram_client_returns_not_ok_on_json_decode_error():
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return b"{bad json"
+
+    def opener(request, timeout=None):  # noqa: ARG001
+        return Response()
+
+    client = TelegramClient(token="abc123", opener=opener)
+
+    result = client.send_message(42, "hello")
+
+    assert result.ok is False
+    assert result.error is not None
+    assert "Expecting property name enclosed in double quotes" in result.error

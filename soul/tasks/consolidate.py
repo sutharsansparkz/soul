@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import warnings
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -120,6 +121,12 @@ def consolidate_lines(
         )
         story_updated = update.changed
         llm_insights = _extract_structured_insights(user_lines, resolved_settings)
+        if llm_insights is None and not (resolved_settings.anthropic_api_key or resolved_settings.openai_api_key):
+            warnings.warn(
+                "No LLM API keys configured — story consolidation using heuristics only. "
+                "Set ANTHROPIC_API_KEY or OPENAI_API_KEY for richer profile extraction.",
+                stacklevel=2,
+            )
         if llm_insights is not None:
             story_updated = _merge_structured_insights(story, llm_insights) or story_updated
         story_repo.save(story)
@@ -210,9 +217,12 @@ def _extract_user_lines(lines: list[str]) -> list[str]:
         lowered = line.casefold()
         if lowered.startswith("user:") or lowered.startswith("you:"):
             user_lines.append(line.split(":", maxsplit=1)[-1].strip())
-    if user_lines:
-        return user_lines
-    return [line.strip() for line in lines if line.strip()]
+    if not user_lines and any(line.strip() for line in lines):
+        warnings.warn(
+            "No user:/you: prefixes found in consolidation input; skipping memory extraction.",
+            stacklevel=2,
+        )
+    return user_lines
 
 
 def _infer_emotional_tag(text: str) -> str | None:
@@ -435,15 +445,14 @@ def archive_and_purge_old_session_messages(
         ]
         file_path = archive_path / f"{session_id}.jsonl"
         try:
-            if not file_path.exists():
-                file_path.write_text(
-                    "\n".join(json.dumps(item, ensure_ascii=True) for item in payload) + ("\n" if payload else ""),
-                    encoding="utf-8",
-                )
-                try:
-                    file_path.chmod(0o600)
-                except OSError:
-                    pass
+            file_path.write_text(
+                "\n".join(json.dumps(item, ensure_ascii=True) for item in payload) + ("\n" if payload else ""),
+                encoding="utf-8",
+            )
+            try:
+                file_path.chmod(0o600)
+            except OSError:
+                pass
             deleted = db.delete_session_messages(database_url, session_id)
             purged_messages += deleted
             archived_sessions += 1

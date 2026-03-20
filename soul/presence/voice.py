@@ -133,12 +133,13 @@ class VoiceBridge:
             },
             ensure_ascii=True,
         ).encode("utf-8")
+        api_key = self.settings.elevenlabs_api_key.get_secret_value() if self.settings.elevenlabs_api_key else ""
         request = Request(
             f"https://api.elevenlabs.io/v1/text-to-speech/{self.settings.elevenlabs_voice_id}",
             data=payload,
             headers={
                 "Content-Type": "application/json",
-                "xi-api-key": self.settings.elevenlabs_api_key or "",
+                "xi-api-key": api_key,
                 "Accept": "audio/mpeg",
             },
             method="POST",

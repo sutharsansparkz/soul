@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,8 +21,8 @@ def _redact_url_credentials(value: str) -> str:
 
 
 class Settings(BaseSettings):
-    anthropic_api_key: str | None = Field(default=None, alias="ANTHROPIC_API_KEY")
-    openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
+    anthropic_api_key: SecretStr | None = Field(default=None, alias="ANTHROPIC_API_KEY")
+    openai_api_key: SecretStr | None = Field(default=None, alias="OPENAI_API_KEY")
 
     database_url: str = Field(default="sqlite:///./soul_data/db/soul.db", alias="DATABASE_URL")
     soul_data_path: str = Field(default="./soul_data", alias="SOUL_DATA_DIR")
@@ -52,9 +52,9 @@ class Settings(BaseSettings):
     raw_retention_days: int = Field(default=90, alias="RAW_RETENTION_DAYS")
     redis_key_prefix: str = Field(default="soul", alias="REDIS_KEY_PREFIX")
 
-    elevenlabs_api_key: str | None = Field(default=None, alias="ELEVENLABS_API_KEY")
+    elevenlabs_api_key: SecretStr | None = Field(default=None, alias="ELEVENLABS_API_KEY")
     elevenlabs_voice_id: str | None = Field(default=None, alias="ELEVENLABS_VOICE_ID")
-    telegram_bot_token: str | None = Field(default=None, alias="TELEGRAM_BOT_TOKEN")
+    telegram_bot_token: SecretStr | None = Field(default=None, alias="TELEGRAM_BOT_TOKEN")
     telegram_chat_id: str | None = Field(default=None, alias="TELEGRAM_CHAT_ID")
 
     model_config = SettingsConfigDict(

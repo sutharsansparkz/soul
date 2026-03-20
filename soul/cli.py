@@ -143,7 +143,7 @@ def _show_last_session(settings: Settings) -> None:
     table = Table(title="Last Session Replay", box=box.SIMPLE_HEAVY)
     table.add_column("Role", style="cyan", width=10)
     table.add_column("Message", style="white")
-    for row in rows[-8:]:
+    for row in rows:
         table.add_row(str(row["role"]), str(row["content"]))
     console.print(table)
 
@@ -397,7 +397,11 @@ def chat(
                 user_mood=current_mood.user_mood,
                 companion_state=current_mood.companion_state,
                 provider="local",
-                metadata={"confidence": current_mood.confidence, "rationale": current_mood.rationale},
+                metadata={
+                    "confidence": current_mood.confidence,
+                    "rationale": current_mood.rationale,
+                    "word_count": len(user_input.split()),
+                },
             )
 
             bundle = builder.build(session_id=session_id, user_input=user_input, mood=current_mood)
@@ -429,6 +433,9 @@ def chat(
                 user_text=user_input,
                 assistant_text=result.text,
                 mood=current_mood,
+            )
+            console.print(
+                f"[dim]── {soul.name}: {current_mood.companion_state}  ·  you: {current_mood.user_mood} ──[/dim]"
             )
     finally:
         db.close_session(settings.database_url, session_id)

@@ -186,7 +186,8 @@ def dispatch_reach_out_candidates(
         return {"sent": 0, "delivered_triggers": [], "reason": "invalid TELEGRAM_CHAT_ID"}
 
     delivery_log = load_delivery_log(settings.proactive_delivery_log_file)
-    telegram = TelegramClient(settings.telegram_bot_token)
+    token = settings.telegram_bot_token.get_secret_value() if settings.telegram_bot_token else None
+    telegram = TelegramClient(token)
     date_key = today.date().isoformat()
     delivered_triggers: list[str] = []
 

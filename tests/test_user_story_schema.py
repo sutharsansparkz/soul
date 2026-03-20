@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+from soul.memory.user_story import _capture_after
+
 
 USER_STORY_FIXTURE = """
 {
@@ -69,3 +71,21 @@ def test_user_story_lists_are_json_friendly():
     assert isinstance(story["upcoming_events"], list)
     assert isinstance(story["values_observed"], list)
     assert isinstance(story["triggers"], list)
+
+
+def test_capture_after_stops_at_sentence_boundary():
+    original = "I live in Chennai. It is very hot here."
+    lowered = original.casefold()
+
+    result = _capture_after(original, lowered, "i live in ")
+
+    assert result == "Chennai"
+
+
+def test_capture_after_handles_no_sentence_boundary():
+    original = "I live in Chennai"
+    lowered = original.casefold()
+
+    result = _capture_after(original, lowered, "i live in ")
+
+    assert result == "Chennai"

@@ -60,7 +60,12 @@ def derive_resonance_signals(database_url: str) -> dict[str, float]:
             assistant_text = str(message["content"])
             user_text = str(next_message["content"])
             assistant_words = len(assistant_text.split())
-            user_words = len(user_text.split())
+            metadata: dict[str, object]
+            try:
+                metadata = json.loads(str(next_message.get("metadata_json") or "{}"))
+            except Exception:
+                metadata = {}
+            user_words = int(metadata.get("word_count") or len(user_text.split()))
             engagement = min(1.0, user_words / 35.0)
             if str(next_message.get("user_mood") or "") in {"reflective", "venting", "celebrating"}:
                 engagement += 0.15

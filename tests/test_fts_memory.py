@@ -60,3 +60,24 @@ def test_sqlite_fts_query_sanitization_handles_symbols(tmp_path):
     )
 
     assert rows
+
+
+def test_sqlite_fts_query_sanitization_handles_tech_terms(tmp_path):
+    settings = _settings(tmp_path)
+    db.init_db(settings.database_url)
+    repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    repo.add_text(
+        "C++ node.js launch notes for the investor update",
+        emotional_tag="neutral",
+        metadata={"session_id": "s1", "user_id": settings.user_id, "timestamp": "2026-03-18T10:00:00+00:00"},
+    )
+
+    rows = db.search_episodic_memories_fts(
+        settings.database_url,
+        "C++ node.js",
+        user_id=settings.user_id,
+        include_cold=True,
+        limit=20,
+    )
+
+    assert rows

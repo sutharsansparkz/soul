@@ -943,8 +943,13 @@ def ensure_memory_fts(database: Path | str) -> None:
 
 
 def _to_fts_query(query: str) -> str:
-    tokens = [re.sub(r"[^\w]+", "", token).strip() for token in query.split()]
-    cleaned = [token for token in tokens if token]
+    tokens = re.split(r"\s+", query.strip())
+    cleaned = []
+    for token in tokens:
+        t = re.sub(r"^[^\w]+|[^\w]+$", "", token)
+        t = re.sub(r'["\*\(\)\:\^~]', "", t)
+        if t:
+            cleaned.append(t)
     if not cleaned:
         return ""
     return " OR ".join(f'"{token}"' for token in cleaned[:20])

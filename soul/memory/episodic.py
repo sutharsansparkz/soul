@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -14,13 +15,19 @@ from soul.memory.scorer import boosted_components, initial_components, recompute
 from .vector_store import LocalVectorStore, MemoryRecord, build_vector_store
 
 
+_INITIALIZED_DATABASES: set[str] = set()
+
+
 class EpisodicMemoryRepository:
     def __init__(self, store_path: str | Path, *, settings: Settings | None = None):
         self.settings = settings or get_settings()
-        db.init_db(self.settings.database_url)
+        db_url = self.settings.database_url
+        if db_url not in _INITIALIZED_DATABASES:
+            db.init_db(db_url)
+            _INITIALIZED_DATABASES.add(db_url)
         self.embedder = LocalHybridEmbedder(self.settings)
         try:
-            ensure_fts_index(self.settings.database_url)
+            ensure_fts_index(db_url)
         except Exception:
             pass
         self.store: LocalVectorStore = build_vector_store(store_path, settings=self.settings)
@@ -100,7 +107,10 @@ class EpisodicMemoryRepository:
             memory_type=memory_type,
             metadata=enriched_metadata,
         )
-        self.store.add(record)
+        try:
+            self.store.add(record)
+        except Exception as exc:
+            warnings.warn(f"Failed to write memory {memory_id} to JSONL fallback store: {exc}")
         return record
 
     def retrieve(self, *, query: str, user_id: str | None = None, k: int | None = None, passive: bool = True) -> list[MemoryRecord]:

@@ -28,18 +28,20 @@ class LLMClient:
         self._openai = None
 
         if settings.anthropic_api_key:
+            anthropic_api_key = settings.anthropic_api_key.get_secret_value()
             try:
                 from anthropic import Anthropic
 
-                self._anthropic = Anthropic(api_key=settings.anthropic_api_key)
+                self._anthropic = Anthropic(api_key=anthropic_api_key)
             except Exception:
                 self._anthropic = None
 
         if settings.openai_api_key:
+            openai_api_key = settings.openai_api_key.get_secret_value()
             try:
                 from openai import OpenAI
 
-                self._openai = OpenAI(api_key=settings.openai_api_key)
+                self._openai = OpenAI(api_key=openai_api_key)
             except Exception:
                 self._openai = None
 
