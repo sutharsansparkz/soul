@@ -21,7 +21,6 @@ def test_persona_fixture_has_20_plus_cases():
 def test_persona_regression_fixtures_are_stable_and_deterministic(tmp_path):
     payload = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
     settings = Settings(
-        anthropic_api_key=None,
         openai_api_key=None,
         database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
         soul_data_path=str(tmp_path / "soul_data"),

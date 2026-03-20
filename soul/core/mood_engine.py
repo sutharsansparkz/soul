@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import warnings
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import cached_property
@@ -10,6 +11,7 @@ from typing import Any
 from soul.config import Settings
 
 _LOCAL_STATE_CACHE: dict[str, dict] = {}
+_CLASSIFIER_NOTICE_SHOWN = False
 
 
 @dataclass(slots=True)
@@ -42,19 +44,15 @@ class MoodEngine:
         "neutral": "neutral",
     }
 
+    # Exact 7 labels output by cardiffnlp/twitter-roberta-base-emotion.
+    # Do not add labels from other models (e.g. go-emotions) — they will never match.
     MODEL_LABEL_MAP = {
         "anger": "venting",
-        "annoyance": "venting",
-        "disappointment": "venting",
-        "sadness": "overwhelmed",
-        "grief": "overwhelmed",
+        "disgust": "venting",
         "fear": "stressed",
-        "nervousness": "stressed",
         "joy": "celebrating",
-        "optimism": "celebrating",
-        "love": "celebrating",
+        "sadness": "overwhelmed",
         "surprise": "curious",
-        "curiosity": "curious",
         "neutral": "neutral",
     }
 
@@ -199,11 +197,20 @@ class MoodEngine:
 
     @cached_property
     def classifier(self):  # type: ignore[no-untyped-def]
+        global _CLASSIFIER_NOTICE_SHOWN
         if not self.settings.mood_model_enabled:
             return None
         try:
             from transformers import pipeline
         except ImportError:
+            if not _CLASSIFIER_NOTICE_SHOWN:
+                warnings.warn(
+                    "Mood classifier is enabled but 'transformers' is not installed. "
+                    "Falling back to keyword heuristics. "
+                    "Install with: pip install transformers torch",
+                    stacklevel=2,
+                )
+                _CLASSIFIER_NOTICE_SHOWN = True
             return None
         try:
             return pipeline(

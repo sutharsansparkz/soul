@@ -127,10 +127,10 @@ def consolidate_lines(
         )
         story_updated = update.changed
         llm_insights = _extract_structured_insights(user_lines, resolved_settings)
-        if llm_insights is None and not (resolved_settings.anthropic_api_key or resolved_settings.openai_api_key):
+        if llm_insights is None and not resolved_settings.openai_api_key:
             warnings.warn(
-                "No LLM API keys configured — story consolidation using heuristics only. "
-                "Set ANTHROPIC_API_KEY or OPENAI_API_KEY for richer profile extraction.",
+                "No LLM API key configured — story consolidation using heuristics only. "
+                "Set OPENAI_API_KEY for richer profile extraction.",
                 stacklevel=2,
             )
         if llm_insights is not None:
@@ -277,7 +277,7 @@ def _looks_like_big_moment(text: str) -> bool:
 
 
 def _extract_structured_insights(user_lines: list[str], settings: Settings) -> StructuredSessionInsights | None:
-    if not (settings.anthropic_api_key or settings.openai_api_key):
+    if not settings.openai_api_key:
         return None
 
     try:

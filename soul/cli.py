@@ -946,7 +946,11 @@ def _next_milestone_label(settings: Settings, total_messages: int) -> str:
         ("three_month_anniversary", "3-month anniversary"),
     ]
     for kind, label in checks:
-        if kind == "hundredth_message" and total_messages >= 100:
+        if kind == "hundredth_message":
+            # Show the countdown only while still under 100 messages.
+            # Once reached (or the milestone is already recorded), skip it.
+            if total_messages < 100 and not db.milestone_exists(settings.database_url, kind):
+                return label
             continue
         if not db.milestone_exists(settings.database_url, kind):
             return label
