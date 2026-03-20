@@ -53,6 +53,8 @@ make docker-test
 
 `make docker-test` uses Docker Compose under the hood, so Docker Desktop or another local Docker engine must be running and the Docker CLI must be available on `PATH`.
 
+Note: the default Compose stack binds Redis to `127.0.0.1` only for local development, and it should not be exposed publicly without authentication.
+
 The container entrypoints for `worker` and `beat` now launch Celery directly, so the runtime matches the background job model instead of a custom polling loop.
 
 ## Current Scope

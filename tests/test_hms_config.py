@@ -7,6 +7,7 @@ def test_hms_config_knobs_are_exposed():
     settings = Settings(
         hybrid_embeddings=True,
         hybrid_model="all-MiniLM-L6-v2",
+        llm_max_tokens=1200,
         memory_candidate_k=25,
         hms_semantic_weight=0.6,
         hms_score_weight=0.4,
@@ -15,6 +16,7 @@ def test_hms_config_knobs_are_exposed():
     )
     assert settings.hybrid_embeddings is True
     assert settings.hybrid_model == "all-MiniLM-L6-v2"
+    assert settings.llm_max_tokens == 1200
     assert settings.memory_candidate_k == 25
     assert settings.hms_semantic_weight == 0.6
     assert settings.hms_score_weight == 0.4

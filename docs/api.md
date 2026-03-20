@@ -39,6 +39,10 @@ In-session commands (`soul chat`):
 - `/story`
 - `/voice on|off`
 
+## Configuration variables (key subset)
+
+- `LLM_MAX_TOKENS` — maximum tokens for Anthropic completions (default: 800)
+
 ## Memory command contracts
 
 - `soul memories`:

@@ -7,6 +7,20 @@ from soul.config import Settings
 
 
 def build_presence_context(database_url: str, settings: Settings) -> dict[str, object]:
+    """Build the shared presence context for proactive tasks.
+
+    Args:
+        database_url: Database connection URL used to read recent activity.
+        settings: Runtime settings object; currently only used to keep the
+            helper signature aligned with the single-user/global milestone
+            design.
+
+    Returns:
+        A dict with `days_since_last_chat`, `stress_signal_dates`, and
+        `milestones_today` keys.
+    """
+    # Current milestone and presence context is global in this single-user design.
+    _ = settings
     now = datetime.now(timezone.utc)
     last_message_at = db.get_last_message_timestamp(database_url)
     days_since_last_chat: int | None = None

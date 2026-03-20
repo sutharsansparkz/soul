@@ -31,6 +31,7 @@ def main() -> None:
 def _fallback_beat() -> None:
     from soul import db
     from soul.config import get_settings
+    from soul.core.presence_context import build_presence_context
     from soul.memory.user_story import UserStoryRepository
     from soul.tasks.proactive import build_reach_out_candidates, dispatch_reach_out_candidates, save_reach_out_candidates
 
@@ -42,15 +43,13 @@ def _fallback_beat() -> None:
     print(f"SOUL beat fallback starting with interval={interval_seconds}s", flush=True)
 
     while True:
-        last_message_at = db.get_last_message_timestamp(settings.database_url)
-        days_since_last_chat = None
-        if last_message_at:
-            timestamp = datetime.fromisoformat(last_message_at)
-            delta = datetime.now(timezone.utc) - timestamp
-            days_since_last_chat = delta.days
+        presence_context = build_presence_context(settings.database_url, settings)
         candidates = build_reach_out_candidates(
-            days_since_last_chat=days_since_last_chat,
+            days_since_last_chat=presence_context["days_since_last_chat"],
             story=story_repo.load(),
+            today=datetime.now(timezone.utc),
+            stress_signal_dates=presence_context["stress_signal_dates"],
+            milestones_today=presence_context["milestones_today"],
         )
         save_reach_out_candidates(settings.reach_out_candidates_file, candidates)
         delivery = dispatch_reach_out_candidates(settings, candidates)
