@@ -209,6 +209,11 @@ def insert_drift_log(
     return log_id
 
 
+_JSONB_MIGRATION_COLUMNS: frozenset[str] = frozenset(
+    {"dimensions_before", "dimensions_after", "resonance_signals"}
+)
+
+
 def migrate_postgres_jsonb(database: Path | str) -> dict[str, object]:
     database_url = _normalize_database(database)
     if not database_url.startswith(("postgresql://", "postgres://")):
@@ -217,10 +222,16 @@ def migrate_postgres_jsonb(database: Path | str) -> dict[str, object]:
     altered: list[str] = []
     already_jsonb: list[str] = []
     failed: list[str] = []
-    columns = ("dimensions_before", "dimensions_after", "resonance_signals")
     engine = _get_engine(database_url)
-    for column in columns:
-        statement = f"ALTER TABLE drift_log ALTER COLUMN {column} TYPE JSONB USING {column}::jsonb"
+    for column in _JSONB_MIGRATION_COLUMNS:
+        # Both the table name and column name are validated against explicit
+        # allowlists before interpolation to prevent DDL injection.
+        _validate_sql_identifier(column, "column")
+        if column not in _JSONB_MIGRATION_COLUMNS:
+            raise ValueError(f"Column {column!r} is not in the JSONB migration allowlist.")
+        statement = (
+            f"ALTER TABLE drift_log ALTER COLUMN {column} TYPE JSONB USING {column}::jsonb"
+        )
         try:
             with engine.begin() as connection:
                 connection.exec_driver_sql(statement)
@@ -322,6 +333,45 @@ def _migrate_hms_schema(connection: Connection) -> None:
         )
 
 
+_SAFE_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+# Allowlist of SQL column type definitions accepted by _ensure_columns.
+# Any definition not in this set is rejected before it reaches exec_driver_sql.
+_ALLOWED_COLUMN_DEFINITIONS: frozenset[str] = frozenset(
+    {
+        "INTEGER DEFAULT 0",
+        "INTEGER NOT NULL DEFAULT 0",
+        "REAL NOT NULL DEFAULT 0.0",
+        "REAL NOT NULL DEFAULT 0.3",
+        "REAL NOT NULL DEFAULT 0.5",
+        "REAL NOT NULL DEFAULT 1.0",
+        "REAL DEFAULT 0.023",
+        "TEXT",
+        "TEXT DEFAULT 'present'",
+        "TEXT DEFAULT 'moment'",
+        "BLOB DEFAULT NULL",
+    }
+)
+
+# Allowlist of table names that _ensure_columns is permitted to alter.
+_ALLOWED_TABLE_NAMES: frozenset[str] = frozenset(
+    {
+        "episodic_memory",
+        "memory_scores",
+        "session_memory_exports",
+    }
+)
+
+
+def _validate_sql_identifier(value: str, label: str) -> None:
+    """Raise ValueError if *value* is not a safe SQL identifier."""
+    if not _SAFE_IDENTIFIER_RE.match(value):
+        raise ValueError(
+            f"Unsafe SQL identifier for {label!r}: {value!r}. "
+            "Only alphanumeric characters and underscores are allowed."
+        )
+
+
 def _ensure_columns(
     connection: Connection,
     *,
@@ -329,11 +379,27 @@ def _ensure_columns(
     table_name: str,
     columns: dict[str, str],
 ) -> None:
+    # Validate table name against allowlist and identifier pattern.
+    if table_name not in _ALLOWED_TABLE_NAMES:
+        raise ValueError(
+            f"Table {table_name!r} is not in the allowed list for schema migration."
+        )
+    _validate_sql_identifier(table_name, "table_name")
+
     existing = {column["name"] for column in inspector.get_columns(table_name)}
     for column_name, definition in columns.items():
         if column_name in existing:
             continue
-        connection.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
+        # Validate column name (identifier pattern) and definition (allowlist).
+        _validate_sql_identifier(column_name, "column_name")
+        if definition not in _ALLOWED_COLUMN_DEFINITIONS:
+            raise ValueError(
+                f"Column definition {definition!r} for {column_name!r} is not in the "
+                "allowed list. Add it to _ALLOWED_COLUMN_DEFINITIONS if it is intentional."
+            )
+        connection.exec_driver_sql(
+            f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}"
+        )
 
 
 def _ensure_memory_fts_schema(connection: Connection) -> None:
