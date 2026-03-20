@@ -7,6 +7,7 @@ import json
 
 from soul import db
 from soul.config import Settings, get_settings
+from soul.core.presence_context import build_presence_context
 from soul.memory.user_story import UserStory
 from soul.memory.user_story import UserStoryRepository
 from soul.presence.telegram import TelegramClient
@@ -215,43 +216,14 @@ if celery_app is not None:
         settings = get_settings()
         db.init_db(settings.database_url)
         story_repo = UserStoryRepository(settings.user_story_file)
-        last_message_at = db.get_last_message_timestamp(settings.database_url)
+        presence_context = build_presence_context(settings.database_url, settings)
         now = datetime.now(timezone.utc)
-        days_since_last_chat = None
-        if last_message_at:
-            timestamp = datetime.fromisoformat(last_message_at)
-            days_since_last_chat = (now - timestamp).days
-        stress_events = db.list_user_message_moods_since(
-            settings.database_url,
-            moods=("stressed", "overwhelmed", "venting"),
-            since=(now - timedelta(days=14)).replace(microsecond=0).isoformat(),
-        )
-        stress_signal_dates = [str(item["created_at"]) for item in stress_events]
-        milestones = db.list_milestones(settings.database_url, limit=200)
-        milestones_today: list[str] = []
-        for milestone in milestones:
-            occurred_at = str(milestone.get("occurred_at", ""))
-            try:
-                occurred = datetime.fromisoformat(occurred_at)
-            except ValueError:
-                continue
-            if (occurred.month, occurred.day) == (now.month, now.day):
-                milestones_today.append(str(milestone.get("note") or milestone.get("kind") or "Milestone"))
-        first_sessions = db.list_sessions(settings.database_url, limit=1)
-        if first_sessions:
-            first_started = str(first_sessions[0].get("started_at", ""))
-            try:
-                first_date = datetime.fromisoformat(first_started)
-            except ValueError:
-                first_date = None
-            if first_date and first_date.year < now.year and (first_date.month, first_date.day) == (now.month, now.day):
-                milestones_today.append("relationship anniversary")
         candidates = build_reach_out_candidates(
-            days_since_last_chat=days_since_last_chat,
+            days_since_last_chat=presence_context["days_since_last_chat"],
             story=story_repo.load(),
             today=now,
-            stress_signal_dates=stress_signal_dates,
-            milestones_today=milestones_today,
+            stress_signal_dates=presence_context["stress_signal_dates"],
+            milestones_today=presence_context["milestones_today"],
         )
         save_reach_out_candidates(settings.reach_out_candidates_file, candidates)
         delivery = dispatch_reach_out_candidates(settings, candidates)

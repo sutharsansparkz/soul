@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
+from sqlalchemy import text
+
+from soul import db
 from soul.evolution.drift_engine import SOUL_BASELINE, run_weekly_drift
+from soul.tasks.drift_weekly import derive_resonance_signals
 
 
 def test_weekly_drift_applies_small_adjustments():
@@ -34,3 +40,61 @@ def test_weekly_drift_uses_only_known_state_dimensions_and_ignores_extra_signals
 
     assert updated["humor_intensity"] == 0.51
     assert "ignored_signal" not in updated
+
+
+def test_derive_resonance_signals_ignores_sessions_older_than_30_days(tmp_path):
+    database_url = f"sqlite:///{(tmp_path / 'soul.db').as_posix()}"
+    db.init_db(database_url)
+
+    old_session = db.create_session(database_url, "Ara")
+    db.log_message(
+        database_url,
+        session_id=old_session,
+        role="assistant",
+        content="What part of that felt most overwhelming and why does it matter so much to you right now?",
+        companion_state="warm",
+    )
+    db.log_message(
+        database_url,
+        session_id=old_session,
+        role="user",
+        content="I feel stressed about the launch because the deadline keeps moving and I am carrying too much alone.",
+        user_mood="stressed",
+        companion_state="warm",
+    )
+    db.close_session(database_url, old_session)
+
+    recent_session = db.create_session(database_url, "Ara")
+    db.close_session(database_url, recent_session)
+
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    old_timestamp = (now - timedelta(days=31)).isoformat()
+    recent_timestamp = (now - timedelta(days=1)).isoformat()
+    with db.connect(database_url) as connection:
+        connection.execute(
+            text("UPDATE sessions SET started_at = :started_at, ended_at = :ended_at WHERE id = :session_id"),
+            {
+                "started_at": old_timestamp,
+                "ended_at": old_timestamp,
+                "session_id": old_session,
+            },
+        )
+        connection.execute(
+            text("UPDATE sessions SET started_at = :started_at, ended_at = :ended_at WHERE id = :session_id"),
+            {
+                "started_at": recent_timestamp,
+                "ended_at": recent_timestamp,
+                "session_id": recent_session,
+            },
+        )
+        connection.commit()
+
+    signals = derive_resonance_signals(database_url)
+
+    assert signals == {
+        "humor_intensity": 0.0,
+        "response_length": 0.0,
+        "curiosity_depth": 0.0,
+        "directness": 0.0,
+        "warmth_expression": 0.0,
+    }

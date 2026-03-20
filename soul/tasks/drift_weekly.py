@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import json
 
@@ -49,7 +49,8 @@ def derive_resonance_signals(database_url: str) -> dict[str, float]:
     }
     pair_count = 0
 
-    sessions = db.list_sessions(database_url, completed_only=True)
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    sessions = [s for s in db.list_sessions(database_url, completed_only=True) if str(s.get("started_at", "")) >= cutoff]
     for session in sessions[-50:]:
         messages = db.get_session_messages(database_url, str(session["id"]))
         for index, message in enumerate(messages[:-1]):

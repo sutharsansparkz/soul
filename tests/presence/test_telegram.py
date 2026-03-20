@@ -49,6 +49,27 @@ def test_telegram_client_uses_payload_and_opener():
     assert b'"parse_mode": "Markdown"' in captured["data"]
 
 
+def test_telegram_client_returns_not_ok_when_api_returns_ok_false():
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return b'{"ok": false, "error_code": 400, "description": "Bad Request"}'
+
+    def opener(request, timeout=None):  # noqa: ARG001
+        return Response()
+
+    client = TelegramClient(token="abc123", opener=opener)
+
+    result = client.send_message(42, "hello")
+
+    assert result.ok is False
+
+
 def test_bot_runner_parses_updates():
     runner = TelegramBotRunner(
         runtime=SimpleNamespace(handle_text=lambda *args, **kwargs: SimpleNamespace(reply_text="hi")),

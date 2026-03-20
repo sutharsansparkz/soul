@@ -21,7 +21,7 @@ def test_in_session_save_command_creates_flagged_hms_memory(tmp_path, monkeypatc
         voice="warm",
         energy="steady",
     )
-    prompts = iter(['/save "remember this launch moment"', "/quit"])
+    prompts = iter(["/save remember this launch moment", "/quit"])
 
     monkeypatch.setattr(cli, "_bootstrap", lambda: (settings, soul))
     monkeypatch.setattr(cli.Prompt, "ask", staticmethod(lambda *args, **kwargs: next(prompts)))
@@ -31,6 +31,7 @@ def test_in_session_save_command_creates_flagged_hms_memory(tmp_path, monkeypatc
     assert result.exit_code == 0
     rows = db.search_episodic_memories(settings.database_url, "launch moment", user_id=settings.user_id, include_cold=True, limit=5)
     assert rows
+    assert str(rows[0]["content"]) == "remember this launch moment"
     memory_id = str(rows[0]["id"])
     score = db.get_memory_score(settings.database_url, memory_id)
     assert score is not None

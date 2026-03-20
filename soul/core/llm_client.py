@@ -104,7 +104,7 @@ class LLMClient:
         chunks: list[str] = []
         with self._anthropic.messages.stream(
             model=self.settings.llm_model,
-            max_tokens=700,
+            max_tokens=self.settings.llm_max_tokens,
             temperature=0.8,
             system=system_prompt,
             messages=messages,

@@ -81,6 +81,37 @@ def test_post_processor_records_milestones_and_story_updates(tmp_path):
     assert story.big_moments[0].companion_was_there is True
 
 
+def test_post_processor_writes_stressed_turn_to_episodic_memory_immediately(tmp_path):
+    database_url = f"sqlite:///{(tmp_path / 'soul.db').as_posix()}"
+    db.init_db(database_url)
+
+    settings = Settings(
+        database_url=database_url,
+        soul_data_path=str(tmp_path / "soul_data"),
+        user_id="local-user",
+    )
+    session_id = db.create_session(database_url, "Ara")
+    processor = PostProcessor(settings)
+    mood = MoodSnapshot(user_mood="stressed", companion_state="warm", confidence=0.9, rationale="heuristic")
+    user_text = "I am stressed about the product launch and need a breather right now tonight."
+
+    processor.process_turn(
+        session_id=session_id,
+        user_text=user_text,
+        assistant_text="I am here.",
+        mood=mood,
+    )
+
+    episodic_rows = db.list_episodic_memories(database_url, user_id=settings.user_id, include_cold=True, limit=10)
+    sql_rows = db.list_memories(database_url, limit=10)
+
+    assert len(episodic_rows) == 1
+    assert str(episodic_rows[0]["emotional_tag"]) == "stressed"
+    assert len(sql_rows) == 1
+    assert str(sql_rows[0]["label"]) == "stressed moment"
+    assert str(sql_rows[0]["content"]) == user_text
+
+
 def test_post_processor_tracks_recurring_phrase_and_dedupes_major_life_events(tmp_path):
     database_url = f"sqlite:///{(tmp_path / 'soul.db').as_posix()}"
     db.init_db(database_url)

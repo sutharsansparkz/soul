@@ -30,7 +30,7 @@ class PostProcessor:
             recurring_phrases=recurring_phrases,
         )
 
-        if mood.user_mood in {"venting", "reflective", "celebrating"} and len(user_text.split()) >= 8:
+        if mood.user_mood in {"venting", "reflective", "celebrating", "stressed", "overwhelmed"} and len(user_text.split()) >= 8:
             self.episodic_repo.add_text(
                 user_text,
                 emotional_tag=mood.user_mood,

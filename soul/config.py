@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     redis_url: str = Field(default="redis://localhost:6379", alias="REDIS_URL")
 
     llm_model: str = Field(default="claude-sonnet-4-6", alias="LLM_MODEL")
+    llm_max_tokens: int = Field(default=800, alias="LLM_MAX_TOKENS")
     fallback_llm_model: str = Field(default="gpt-4o", alias="FALLBACK_LLM_MODEL")
     hybrid_embeddings: bool = Field(default=False, alias="HYBRID_EMBEDDINGS")
     hybrid_model: str = Field(default="all-MiniLM-L6-v2", alias="HYBRID_MODEL")

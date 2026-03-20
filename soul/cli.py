@@ -4,7 +4,7 @@ import json
 import os
 import shlex
 import subprocess
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 import typer
@@ -21,6 +21,7 @@ from soul.config import Settings, get_settings
 from soul.core.context_builder import ContextBuilder
 from soul.core.llm_client import LLMClient, LLMResult
 from soul.core.mood_engine import MoodEngine, MoodSnapshot
+from soul.core.presence_context import build_presence_context
 from soul.core.post_processor import PostProcessor
 from soul.core.soul_loader import Soul, load_soul
 from soul.evolution.drift_engine import DriftLogRepository
@@ -159,33 +160,14 @@ def _refresh_reach_out_candidates(settings: Settings) -> None:
     """Refresh reach-out candidates on chat startup. Silent and best-effort."""
     try:
         story_repo = UserStoryRepository(settings.user_story_file)
-        last_message_at = db.get_last_message_timestamp(settings.database_url)
         now = datetime.now(timezone.utc)
-        days_since_last_chat: int | None = None
-        if last_message_at:
-            timestamp = datetime.fromisoformat(last_message_at)
-            days_since_last_chat = (now - timestamp).days
-        stress_events = db.list_user_message_moods_since(
-            settings.database_url,
-            moods=("stressed", "overwhelmed", "venting"),
-            since=(now.replace(microsecond=0) - timedelta(days=14)).isoformat(),
-        )
-        stress_signal_dates = [str(item["created_at"]) for item in stress_events]
-        milestones_today: list[str] = []
-        for milestone in db.list_milestones(settings.database_url, limit=200):
-            occurred_at = str(milestone.get("occurred_at", ""))
-            try:
-                occurred = datetime.fromisoformat(occurred_at)
-            except ValueError:
-                continue
-            if (occurred.month, occurred.day) == (now.month, now.day):
-                milestones_today.append(str(milestone.get("note") or milestone.get("kind") or "Milestone"))
+        presence_context = build_presence_context(settings.database_url, settings)
         candidates = build_reach_out_candidates(
-            days_since_last_chat=days_since_last_chat,
+            days_since_last_chat=presence_context["days_since_last_chat"],
             story=story_repo.load(),
             today=now,
-            stress_signal_dates=stress_signal_dates,
-            milestones_today=milestones_today,
+            stress_signal_dates=presence_context["stress_signal_dates"],
+            milestones_today=presence_context["milestones_today"],
         )
         save_reach_out_candidates(settings.reach_out_candidates_file, candidates)
     except Exception:
@@ -283,9 +265,9 @@ def _handle_session_command(
         return False, voice_enabled
 
     if command == "/save":
-        note = " ".join(parts[1:]).strip()
+        note = raw_input[len("/save"):].strip()
         if not note:
-            console.print("[red]Usage:[/red] /save \"note text\"")
+            console.print("[red]Usage:[/red] /save note text")
             return False, voice_enabled
         emotional_tag = current_mood.user_mood if current_mood is not None else None
         saved = episodic_repo.add_text(
@@ -459,30 +441,59 @@ def memories_list(ctx: typer.Context) -> None:
         return
     settings, _ = _bootstrap()
     episodic_repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
-    memories = episodic_repo.list_top(limit=120)
+    memories: list[dict[str, object]] = []
+    for item in episodic_repo.list_top(limit=120):
+        memories.append(
+            {
+                "source": "episodic",
+                "score": _record_hms_score(item),
+                "tier": _record_tier(item),
+                "when": str(item.metadata.get("timestamp") or "-"),
+                "content": str(item.content),
+            }
+        )
+
+    for item in db.list_memories(settings.database_url, limit=40):
+        label = str(item.get("label") or "manual note")
+        content = str(item.get("content") or "")
+        memories.append(
+            {
+                "source": "manual",
+                "score": _clamp01(float(item.get("importance", 0.5))),
+                "tier": "\u2014",
+                "when": str(item.get("created_at") or "-"),
+                "content": f"{label}: {content}",
+            }
+        )
+
     if not memories:
         console.print("[dim]No memories stored yet.[/dim]")
         return
 
+    memories.sort(key=lambda item: float(item["score"]), reverse=True)
     table = Table(title="Recent memories - sorted by HMS score", box=box.SIMPLE_HEAVY)
     table.add_column("Score", style="cyan", width=8)
     table.add_column("Bar", style="magenta", width=14)
     table.add_column("Tier", style="magenta", width=10)
     table.add_column("When", style="cyan", width=20)
     table.add_column("Content", style="white")
-    tier_counts = {"vivid": 0, "present": 0, "fading": 0, "cold": 0}
+    tier_counts = {"vivid": 0, "present": 0, "fading": 0, "cold": 0, "manual": 0}
     for item in memories[:60]:
-        score = _record_hms_score(item)
-        tier = _record_tier(item)
-        tier_counts[tier] = tier_counts.get(tier, 0) + 1
-        timestamp = str(item.metadata.get("timestamp") or "-")
-        table.add_row(f"{score:.2f}", _score_bar(score), tier, timestamp, str(item.content))
+        score = float(item["score"])
+        tier = str(item["tier"])
+        source = str(item["source"])
+        if source == "manual":
+            tier_counts["manual"] = tier_counts.get("manual", 0) + 1
+        else:
+            tier_counts[tier] = tier_counts.get(tier, 0) + 1
+        table.add_row(f"{score:.2f}", _score_bar(score), tier, str(item["when"]), str(item["content"]))
     console.print(table)
     console.print(
         f"[dim]{tier_counts.get('vivid', 0)} vivid[/dim]  "
         f"[dim]{tier_counts.get('present', 0)} present[/dim]  "
         f"[dim]{tier_counts.get('fading', 0)} fading[/dim]  "
-        f"[dim]{tier_counts.get('cold', 0)} cold[/dim]"
+        f"[dim]{tier_counts.get('cold', 0)} cold[/dim]  "
+        f"[dim]{tier_counts.get('manual', 0)} manual[/dim]"
     )
 
 
@@ -719,48 +730,17 @@ def status() -> None:
     voice_bridge = VoiceBridge(settings)
     telegram_runner = TelegramBotRunner(settings=settings)
     story_repo = UserStoryRepository(settings.user_story_file)
-    last_message_at = db.get_last_message_timestamp(settings.database_url)
+    now = datetime.now(timezone.utc)
     total_sessions = db.count_sessions(settings.database_url)
     total_messages = db.count_messages(settings.database_url)
-
-    now = datetime.now(timezone.utc)
-    days_since_last_chat: int | None = None
-    if last_message_at:
-        timestamp = datetime.fromisoformat(last_message_at)
-        delta = now - timestamp
-        days_since_last_chat = delta.days
-
-    stress_events = db.list_user_message_moods_since(
-        settings.database_url,
-        moods=("stressed", "overwhelmed", "venting"),
-        since=(now.replace(microsecond=0) - timedelta(days=14)).isoformat(),
-    )
-    stress_signal_dates = [str(item["created_at"]) for item in stress_events]
-    milestones_today: list[str] = []
-    for milestone in db.list_milestones(settings.database_url, limit=200):
-        occurred_at = str(milestone.get("occurred_at", ""))
-        try:
-            occurred = datetime.fromisoformat(occurred_at)
-        except ValueError:
-            continue
-        if (occurred.month, occurred.day) == (now.month, now.day):
-            milestones_today.append(str(milestone.get("note") or milestone.get("kind") or "Milestone"))
-    first_sessions = db.list_sessions(settings.database_url, limit=1)
-    if first_sessions:
-        first_started = str(first_sessions[0].get("started_at", ""))
-        try:
-            first_date = datetime.fromisoformat(first_started)
-        except ValueError:
-            first_date = None
-        if first_date and first_date.year < now.year and (first_date.month, first_date.day) == (now.month, now.day):
-            milestones_today.append("relationship anniversary")
+    presence_context = build_presence_context(settings.database_url, settings)
 
     candidates = build_reach_out_candidates(
-        days_since_last_chat=days_since_last_chat,
+        days_since_last_chat=presence_context["days_since_last_chat"],
         story=story_repo.load(),
         today=now,
-        stress_signal_dates=stress_signal_dates,
-        milestones_today=milestones_today,
+        stress_signal_dates=presence_context["stress_signal_dates"],
+        milestones_today=presence_context["milestones_today"],
     )
     save_reach_out_candidates(settings.reach_out_candidates_file, candidates)
 
@@ -773,7 +753,10 @@ def status() -> None:
     table.add_row("Environment", settings.environment)
     table.add_row("Total sessions", str(total_sessions))
     table.add_row("Total messages", str(total_messages))
-    table.add_row("Days since last chat", "never" if days_since_last_chat is None else str(days_since_last_chat))
+    table.add_row(
+        "Days since last chat",
+        "never" if presence_context["days_since_last_chat"] is None else str(presence_context["days_since_last_chat"]),
+    )
     table.add_row("Companion mood", str(current_state.get("state", "unknown")))
     table.add_row("Reach-out candidates", str(len(load_reach_out_candidates(settings.reach_out_candidates_file))))
     table.add_row("Voice", voice_bridge.status()["voice"])
@@ -808,42 +791,14 @@ def run_jobs() -> None:
         resonance_signals=resonance_signals,
     )
     reflection_entry = generate_monthly_reflection(settings)
-    last_message_at = db.get_last_message_timestamp(settings.database_url)
     now = datetime.now(timezone.utc)
-    days_since_last_chat = None
-    if last_message_at:
-        timestamp = datetime.fromisoformat(last_message_at)
-        days_since_last_chat = (now - timestamp).days
-    stress_events = db.list_user_message_moods_since(
-        settings.database_url,
-        moods=("stressed", "overwhelmed", "venting"),
-        since=(now.replace(microsecond=0) - timedelta(days=14)).isoformat(),
-    )
-    stress_signal_dates = [str(item["created_at"]) for item in stress_events]
-    milestones_today: list[str] = []
-    for milestone in db.list_milestones(settings.database_url, limit=200):
-        occurred_at = str(milestone.get("occurred_at", ""))
-        try:
-            occurred = datetime.fromisoformat(occurred_at)
-        except ValueError:
-            continue
-        if (occurred.month, occurred.day) == (now.month, now.day):
-            milestones_today.append(str(milestone.get("note") or milestone.get("kind") or "Milestone"))
-    first_sessions = db.list_sessions(settings.database_url, limit=1)
-    if first_sessions:
-        first_started = str(first_sessions[0].get("started_at", ""))
-        try:
-            first_date = datetime.fromisoformat(first_started)
-        except ValueError:
-            first_date = None
-        if first_date and first_date.year < now.year and (first_date.month, first_date.day) == (now.month, now.day):
-            milestones_today.append("relationship anniversary")
+    presence_context = build_presence_context(settings.database_url, settings)
     candidates = build_reach_out_candidates(
-        days_since_last_chat=days_since_last_chat,
+        days_since_last_chat=presence_context["days_since_last_chat"],
         story=story_repo.load(),
         today=now,
-        stress_signal_dates=stress_signal_dates,
-        milestones_today=milestones_today,
+        stress_signal_dates=presence_context["stress_signal_dates"],
+        milestones_today=presence_context["milestones_today"],
     )
     save_reach_out_candidates(settings.reach_out_candidates_file, candidates)
     delivery = dispatch_reach_out_candidates(settings, candidates)

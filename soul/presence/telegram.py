@@ -94,7 +94,12 @@ class TelegramClient:
             method="POST",
         )
         with self._open(request, self._timeout) as response:
-            return json.loads(response.read().decode("utf-8"))
+            payload = json.loads(response.read().decode("utf-8"))
+        if not payload.get("ok"):
+            description = payload.get("description")
+            error_code = payload.get("error_code")
+            raise URLError(description or error_code or "telegram api error")
+        return payload
 
 
 class TelegramBotRunner:

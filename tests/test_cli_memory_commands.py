@@ -25,6 +25,13 @@ def test_memories_list_renders_hms_score_and_tier_bars(tmp_path, monkeypatch):
         emotional_tag="celebrating",
         metadata={"session_id": "s1", "user_id": settings.user_id, "timestamp": "2026-03-18T10:00:00+00:00"},
     )
+    db.save_memory(
+        settings.database_url,
+        label="manual launch note",
+        content="I wrote this down for later.",
+        importance=0.8,
+        source="manual",
+    )
     monkeypatch.setattr(cli, "_bootstrap", lambda: (settings, SimpleNamespace(name="Ara")))
 
     result = CliRunner().invoke(cli.app, ["memories"])
@@ -33,6 +40,7 @@ def test_memories_list_renders_hms_score_and_tier_bars(tmp_path, monkeypatch):
     assert "sorted by HMS score" in result.stdout
     assert "vivid" in result.stdout or "present" in result.stdout
     assert "█" in result.stdout
+    assert "manual" in result.stdout
 
 
 def test_memories_search_uses_hms_reranked_output(tmp_path, monkeypatch):
