@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import socket
+import warnings
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable, Iterable
@@ -85,9 +87,17 @@ class TelegramClient:
         if offset is not None:
             params["offset"] = offset
         request = Request(f"{self.api_root}/getUpdates?{urlencode(params)}", method="GET")
-        http_timeout = timeout + 20
-        with self._open(request, http_timeout) as response:
-            payload = json.loads(response.read().decode("utf-8"))
+        http_timeout = min(timeout + 20, 60)
+        previous_timeout = socket.getdefaulttimeout()
+        socket.setdefaulttimeout(http_timeout)
+        try:
+            with self._open(request, http_timeout) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except (URLError, OSError, TimeoutError) as exc:
+            warnings.warn(f"Telegram get_updates timed out or failed: {exc}", stacklevel=2)
+            return []
+        finally:
+            socket.setdefaulttimeout(previous_timeout)
         return list(payload.get("result", []))
 
     def _post(self, method: str, payload: JsonDict) -> JsonDict:
@@ -180,13 +190,21 @@ class TelegramBotRunner:
 
         offset: int | None = None
         while True:
-            updates = self.telegram.get_updates(offset=offset, timeout=10)
+            try:
+                updates = self.telegram.get_updates(offset=offset, timeout=10)
+            except Exception as exc:
+                warnings.warn(f"Telegram polling failed: {exc}", stacklevel=2)
+                time.sleep(poll_interval)
+                continue
             for raw_update in updates:
-                update = self._parse_update(raw_update)
-                if update is None:
-                    continue
-                offset = max(offset or 0, update.update_id + 1)
-                self.handle_update(update)
+                try:
+                    update = self._parse_update(raw_update)
+                    if update is None:
+                        continue
+                    offset = max(offset or 0, update.update_id + 1)
+                    self.handle_update(update)
+                except Exception as exc:
+                    warnings.warn(f"Telegram update handling failed: {exc}", stacklevel=2)
             time.sleep(poll_interval)
 
     def _parse_update(self, raw: JsonDict) -> TelegramUpdate | None:

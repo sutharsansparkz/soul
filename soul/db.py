@@ -10,6 +10,7 @@ from typing import Iterator
 
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import Connection, Engine
+from sqlalchemy.exc import ProgrammingError
 
 
 def utcnow_iso() -> str:
@@ -173,6 +174,37 @@ def init_db(database: Path | str) -> None:
         connection.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS idx_episodic_memory_user_tier ON episodic_memory(user_id, tier, timestamp DESC)"
         )
+    migrate_postgres_jsonb(database_url)
+
+
+def migrate_postgres_jsonb(database: Path | str) -> dict[str, object]:
+    database_url = _normalize_database(database)
+    if not database_url.startswith(("postgresql://", "postgres://")):
+        return {"skipped": True, "reason": "not postgresql"}
+
+    altered: list[str] = []
+    already_jsonb: list[str] = []
+    failed: list[str] = []
+    columns = ("dimensions_before", "dimensions_after", "resonance_signals")
+    engine = _get_engine(database_url)
+    for column in columns:
+        statement = f"ALTER TABLE drift_log ALTER COLUMN {column} TYPE JSONB USING {column}::jsonb"
+        try:
+            with engine.begin() as connection:
+                connection.exec_driver_sql(statement)
+            altered.append(column)
+        except ProgrammingError as exc:
+            if "already of type jsonb" in str(exc).casefold():
+                already_jsonb.append(column)
+                continue
+            failed.append(column)
+        except Exception:
+            failed.append(column)
+    return {
+        "altered": altered,
+        "already_jsonb": already_jsonb,
+        "failed": failed,
+    }
 
 
 def _migrate_hms_schema(connection: Connection) -> None:
@@ -1030,6 +1062,23 @@ def get_last_message_timestamp(database: Path | str) -> str | None:
             text("SELECT created_at FROM messages ORDER BY created_at DESC LIMIT 1")
         ).mappings().first()
     return str(row["created_at"]) if row else None
+
+
+def get_last_companion_state(database: Path | str, user_id: str | None = None) -> str | None:
+    with connect(database) as connection:
+        row = connection.execute(
+            text(
+                """
+                SELECT companion_state
+                FROM messages
+                WHERE role = 'assistant'
+                  AND companion_state IS NOT NULL
+                ORDER BY created_at DESC
+                LIMIT 1
+                """
+            ),
+        ).mappings().first()
+    return str(row["companion_state"]) if row else None
 
 
 def list_drift_log(database: Path | str, limit: int = 20) -> list[dict[str, object]]:

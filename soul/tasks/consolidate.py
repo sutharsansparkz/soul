@@ -421,8 +421,8 @@ def archive_and_purge_old_session_messages(
     archive_path.mkdir(parents=True, exist_ok=True)
     try:
         archive_path.chmod(0o700)
-    except OSError:
-        pass
+    except OSError as exc:
+        warnings.warn(f"Could not secure archive directory {archive_path}: {exc}", stacklevel=2)
 
     archived_sessions = 0
     purged_messages = 0
@@ -453,15 +453,27 @@ def archive_and_purge_old_session_messages(
                 "\n".join(json.dumps(item, ensure_ascii=True) for item in payload) + ("\n" if payload else ""),
                 encoding="utf-8",
             )
-            try:
-                file_path.chmod(0o600)
-            except OSError:
-                pass
-            deleted = db.delete_session_messages(database_url, session_id)
-            purged_messages += deleted
-            archived_sessions += 1
         except Exception:
             failed_sessions += 1
+            continue
+
+        try:
+            file_path.chmod(0o600)
+        except OSError as exc:
+            failed_sessions += 1
+            warnings.warn(
+                f"Could not secure archive file {file_path}: {exc} - skipping purge for session {session_id}",
+                stacklevel=2,
+            )
+            continue
+
+        try:
+            deleted = db.delete_session_messages(database_url, session_id)
+        except Exception:
+            failed_sessions += 1
+            continue
+        purged_messages += deleted
+        archived_sessions += 1
     return {
         "archived_sessions": archived_sessions,
         "purged_messages": purged_messages,

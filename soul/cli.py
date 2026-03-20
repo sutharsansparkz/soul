@@ -238,9 +238,17 @@ def _show_pending_reach_outs(settings: Settings, soul: Soul) -> None:
 def _voice_output(voice_bridge: VoiceBridge, enabled: bool, text: str) -> None:
     if not enabled:
         return
-    result = voice_bridge.speak(text)
-    if result.ok:
-        console.print(f"[dim]voice output saved to {result.output_path}[/dim]")
+    try:
+        result = voice_bridge.speak(text, autoplay=True)
+    except TypeError as exc:
+        if "autoplay" not in str(exc):
+            raise
+        result = voice_bridge.speak(text)
+    played = bool(getattr(result, "played", False))
+    if result.ok and played:
+        console.print("[dim]voice played[/dim]")
+    elif result.ok:
+        console.print(f"[dim]voice saved to {result.output_path}[/dim]")
     else:
         console.print(f"[yellow]voice output skipped: {result.error}[/yellow]")
 
@@ -793,6 +801,7 @@ def status() -> None:
     save_reach_out_candidates(settings.reach_out_candidates_file, candidates)
 
     current_state = mood_engine.current_state(settings.user_id) or {}
+    mood_state = current_state.get("state") or db.get_last_companion_state(settings.database_url) or "no sessions yet"
     table = Table(title="SOUL Status", box=box.SIMPLE_HEAVY)
     table.add_column("Field", style="magenta", width=22)
     table.add_column("Value", style="white")
@@ -805,7 +814,7 @@ def status() -> None:
         "Days since last chat",
         "never" if presence_context["days_since_last_chat"] is None else str(presence_context["days_since_last_chat"]),
     )
-    table.add_row("Companion mood", str(current_state.get("state", "unknown")))
+    table.add_row("Companion mood", str(mood_state))
     table.add_row("Reach-out candidates", str(len(load_reach_out_candidates(settings.reach_out_candidates_file))))
     table.add_row("Voice", voice_bridge.status()["voice"])
     table.add_row("Telegram", telegram_runner.status()["telegram"])

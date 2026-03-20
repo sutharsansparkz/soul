@@ -4,6 +4,7 @@ from soul import db
 from soul.config import Settings
 from soul.memory.episodic import EpisodicMemoryRepository
 from soul.memory.retriever import MemoryRetriever
+from soul.memory.vector_store import MemoryRecord
 
 
 def _settings(tmp_path) -> Settings:  # noqa: ANN001
@@ -113,3 +114,36 @@ def test_retriever_exposes_bm25_metadata_from_sqlite_fts(tmp_path):
     assert "bm25_score" in rows[0].metadata
     assert "bm25_similarity" in rows[0].metadata
     assert 0.0 <= float(rows[0].metadata["bm25_score"]) <= 1.0
+
+
+def test_backfill_preserves_ref_count(tmp_path, monkeypatch):
+    settings = _settings(tmp_path)
+    db.init_db(settings.database_url)
+    repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    memory_id = "legacy-memory-1"
+    record = MemoryRecord(
+        id=memory_id,
+        content="legacy investor launch memory with repeat retrievals",
+        emotional_tag="stressed",
+        ref_count=5,
+        metadata={
+            "memory_id": memory_id,
+            "session_id": "legacy-session",
+            "user_id": settings.user_id,
+            "timestamp": "2026-03-18T10:00:00+00:00",
+            "ref_count": 5,
+        },
+    )
+    repo.store.add(record)
+    retriever = MemoryRetriever(settings, repo)
+    monkeypatch.setattr(retriever, "_apply_retrieval_boost", lambda **kwargs: None)
+
+    rows = retriever.retrieve(query="legacy investor launch", user_id=settings.user_id, k=1, passive=True)
+
+    assert rows
+    memory_row = db.get_episodic_memory(settings.database_url, memory_id)
+    score_row = db.get_memory_score(settings.database_url, memory_id)
+    assert memory_row is not None
+    assert int(memory_row["ref_count"]) == 5
+    assert score_row is not None
+    assert float(score_row["score_retrieval"]) > 0

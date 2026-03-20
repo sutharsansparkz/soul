@@ -77,3 +77,41 @@ def test_archive_and_purge_does_not_delete_messages_when_archive_write_fails(tmp
 
     assert result["failed_sessions"] == 1
     assert db.get_session_messages(database_url, old_session)
+
+
+def test_archive_purge_skips_delete_when_chmod_fails(tmp_path, monkeypatch):
+    database_url = f"sqlite:///{(tmp_path / 'soul.db').as_posix()}"
+    db.init_db(database_url)
+
+    old_session = db.create_session(database_url, "Ara")
+    db.log_message(database_url, session_id=old_session, role="user", content="keep me")
+    db.log_message(database_url, session_id=old_session, role="assistant", content="keep me too")
+    db.close_session(database_url, old_session)
+
+    old_date = datetime.now(timezone.utc) - timedelta(days=120)
+    with db.connect(database_url) as connection:
+        connection.execute(
+            text("UPDATE sessions SET ended_at = :ended_at WHERE id = :session_id"),
+            {"ended_at": old_date.replace(microsecond=0).isoformat(), "session_id": old_session},
+        )
+        connection.commit()
+
+    original_chmod = Path.chmod
+
+    def failing_chmod(self, mode):  # noqa: ANN001
+        if self.suffix == ".jsonl":
+            raise OSError("chmod denied")
+        return original_chmod(self, mode)
+
+    monkeypatch.setattr(Path, "chmod", failing_chmod)
+
+    result = archive_and_purge_old_session_messages(
+        database_url=database_url,
+        archive_dir=tmp_path / "archive",
+        retention_days=90,
+        now=datetime.now(timezone.utc),
+    )
+
+    assert result["failed_sessions"] == 1
+    assert result["purged_messages"] == 0
+    assert db.get_session_messages(database_url, old_session)

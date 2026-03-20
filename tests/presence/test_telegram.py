@@ -1,7 +1,10 @@
 from __future__ import annotations
+
 import socket
 from types import SimpleNamespace
 from urllib.error import URLError
+
+import pytest
 
 from soul.config import Settings
 from soul.presence.telegram import TelegramBotRunner, TelegramClient, TelegramUpdate
@@ -164,9 +167,11 @@ def test_telegram_client_raises_urlerror_on_timeout():
 
     client = TelegramClient(token="abc123", opener=timeout_opener, timeout=5)
     result = client.send_message(42, "hello")
+    updates = client.get_updates(timeout=5)
 
     assert result.ok is False
     assert result.error is not None
+    assert updates == []
 
 
 def test_telegram_client_returns_not_ok_on_json_decode_error():
@@ -190,3 +195,24 @@ def test_telegram_client_returns_not_ok_on_json_decode_error():
     assert result.ok is False
     assert result.error is not None
     assert "Expecting property name enclosed in double quotes" in result.error
+
+
+def test_bot_runner_continues_after_get_updates_failure(monkeypatch):
+    calls = {"count": 0}
+    runner = TelegramBotRunner(
+        runtime=SimpleNamespace(handle_text=lambda *args, **kwargs: SimpleNamespace(reply_text="hi")),
+        telegram_client=TelegramClient(token="abc123", opener=lambda request, timeout=None: None),
+    )
+
+    def flaky_get_updates(*args, **kwargs):  # noqa: ANN001, ARG001
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise ConnectionError("temporary network failure")
+        raise SystemExit
+
+    monkeypatch.setattr(runner.telegram, "get_updates", flaky_get_updates)
+
+    with pytest.raises(SystemExit):
+        runner.run_forever(poll_interval=0)
+
+    assert calls["count"] >= 2

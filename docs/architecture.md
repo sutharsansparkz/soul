@@ -54,3 +54,10 @@ SOUL is a terminal-first companion system with four runtime layers:
 - Settings are process-scoped and lru-cached. Env changes require process restart.
 - PostgreSQL deployments should alter `drift_log` JSON columns to `JSONB` after first init.
 - Cold memories are retained and searchable; memories with `hms_score < 0.05` are cold and passive context injection excludes them.
+
+## PostgreSQL migration
+
+Run `soul-migrate-postgres` (or `python -m scripts.migrate_postgres`) once after
+initial `soul db init` on a PostgreSQL deployment. This alters the three JSON
+columns in `drift_log` to `JSONB` for indexing and query support. The command
+is idempotent - safe to re-run.

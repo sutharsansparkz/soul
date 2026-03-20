@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,11 +26,19 @@ class VoiceTranscriptionResult:
 
 
 @dataclass(slots=True)
+class VoicePlaybackResult:
+    ok: bool
+    backend: str
+    error: str | None = None
+
+
+@dataclass(slots=True)
 class VoiceSynthesisResult:
     ok: bool
     output_path: str | None
     backend: str
     error: str | None = None
+    played: bool = False
 
 
 @dataclass(slots=True)
@@ -111,13 +122,23 @@ class VoiceBridge:
         except Exception as exc:
             return VoiceRecordingResult(ok=False, output_path=None, backend="sounddevice", error=str(exc))
 
-    def speak(self, text: str, *, output_path: str | Path | None = None) -> VoiceSynthesisResult:
+    def play(self, audio_path: str | Path) -> bool:
+        return self._playback_result(audio_path).ok
+
+    def speak(
+        self,
+        text: str,
+        *,
+        output_path: str | Path | None = None,
+        autoplay: bool = False,
+    ) -> VoiceSynthesisResult:
         if not self.elevenlabs_enabled:
             return VoiceSynthesisResult(
                 ok=False,
                 output_path=None,
                 backend="elevenlabs",
                 error="missing ElevenLabs credentials",
+                played=False,
             )
 
         output = Path(output_path) if output_path else self.settings.soul_data_dir / "voice" / "latest.mp3"
@@ -153,11 +174,52 @@ class VoiceBridge:
                 output.chmod(0o600)
             except OSError as exc:
                 warnings.warn(f"Could not set permissions on {output}: {exc}")
-            return VoiceSynthesisResult(ok=True, output_path=str(output), backend="elevenlabs")
+            played = self.play(output) if autoplay else False
+            return VoiceSynthesisResult(ok=True, output_path=str(output), backend="elevenlabs", played=played)
         except URLError as exc:
-            return VoiceSynthesisResult(ok=False, output_path=None, backend="elevenlabs", error=str(exc))
+            return VoiceSynthesisResult(ok=False, output_path=None, backend="elevenlabs", error=str(exc), played=False)
         except Exception as exc:
-            return VoiceSynthesisResult(ok=False, output_path=None, backend="elevenlabs", error=str(exc))
+            return VoiceSynthesisResult(ok=False, output_path=None, backend="elevenlabs", error=str(exc), played=False)
+
+    def _playback_result(self, audio_path: str | Path) -> VoicePlaybackResult:
+        path = Path(audio_path)
+        if not path.exists():
+            return VoicePlaybackResult(ok=False, backend="file", error=f"missing file: {path}")
+
+        if sys.platform == "darwin":
+            return self._run_player(["afplay", str(path)], backend="afplay")
+        if sys.platform == "win32":
+            try:
+                os.startfile(str(path))
+                return VoicePlaybackResult(ok=True, backend="os.startfile")
+            except OSError as exc:
+                return VoicePlaybackResult(ok=False, backend="os.startfile", error=str(exc))
+
+        last_result = VoicePlaybackResult(ok=False, backend="aplay", error="no playback backend succeeded")
+        for backend, command in (
+            ("aplay", ["aplay", str(path)]),
+            ("mpg123", ["mpg123", str(path)]),
+            ("ffplay", ["ffplay", "-nodisp", "-autoexit", str(path)]),
+        ):
+            result = self._run_player(command, backend=backend)
+            if result.ok:
+                return result
+            last_result = result
+        return last_result
+
+    def _run_player(self, command: list[str], *, backend: str) -> VoicePlaybackResult:
+        try:
+            completed = subprocess.run(command, timeout=60, capture_output=True)
+        except FileNotFoundError:
+            return VoicePlaybackResult(ok=False, backend=backend, error=f"{backend} not installed")
+        except subprocess.TimeoutExpired as exc:
+            return VoicePlaybackResult(ok=False, backend=backend, error=str(exc))
+        except OSError as exc:
+            return VoicePlaybackResult(ok=False, backend=backend, error=str(exc))
+
+        if completed.returncode == 0:
+            return VoicePlaybackResult(ok=True, backend=backend)
+        return VoicePlaybackResult(ok=False, backend=backend, error=f"{backend} exited with code {completed.returncode}")
 
     def status(self) -> dict[str, str]:
         return {

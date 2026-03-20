@@ -9,6 +9,8 @@ from typing import Any
 
 from soul.config import Settings
 
+_LOCAL_STATE_CACHE: dict[str, dict] = {}
+
 
 @dataclass(slots=True)
 class MoodSnapshot:
@@ -70,6 +72,8 @@ class MoodEngine:
             user_mood, confidence, rationale = self._heuristic_mood(text, now)
 
         previous_state = self.current_state(user_id)
+        if user_mood == "neutral" and not self._should_preserve_previous_state(text):
+            previous_state = None
         companion_state = self._select_companion_state(user_mood, previous_state, now)
         self._persist_state(
             user_id=user_id,
@@ -86,20 +90,24 @@ class MoodEngine:
             rationale=rationale,
         )
 
+    def _should_preserve_previous_state(self, text: str) -> bool:
+        return len(text.split()) <= 4
+
     def current_state(self, user_id: str | None = None) -> dict[str, Any] | None:
         user_id = user_id or self.settings.user_id
-        if self.redis_client is None:
-            return None
-        try:
-            raw = self.redis_client.get(self._redis_key(user_id))
-        except Exception:
-            return None
-        if not raw:
-            return None
-        try:
-            return json.loads(raw)
-        except json.JSONDecodeError:
-            return None
+        raw: str | None = None
+        if self.redis_client is not None:
+            try:
+                raw = self.redis_client.get(self._redis_key(user_id))
+            except Exception:
+                raw = None
+        if raw:
+            try:
+                return json.loads(raw)
+            except json.JSONDecodeError:
+                pass
+        cached = _LOCAL_STATE_CACHE.get(user_id)
+        return dict(cached) if cached is not None else None
 
     def _select_companion_state(
         self,
@@ -165,12 +173,14 @@ class MoodEngine:
         return mapped, float(top.get("score", 0.0)), f"transformers model label={label}"
 
     def _persist_state(self, *, user_id: str, payload: dict[str, Any]) -> None:
-        if self.redis_client is None:
-            return
-        try:
-            self.redis_client.set(self._redis_key(user_id), json.dumps(payload, ensure_ascii=True))
-        except Exception:
-            return
+        serialized = json.dumps(payload, ensure_ascii=True)
+        if self.redis_client is not None:
+            try:
+                self.redis_client.set(self._redis_key(user_id), serialized)
+            except Exception:
+                _LOCAL_STATE_CACHE[user_id] = dict(payload)
+                return
+        _LOCAL_STATE_CACHE[user_id] = dict(payload)
 
     def _redis_key(self, user_id: str) -> str:
         return f"{self.settings.redis_key_prefix}:mood:{user_id}"

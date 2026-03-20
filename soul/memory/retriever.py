@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from soul import db
 from soul.memory.embedder import LocalHybridEmbedder
-from soul.memory.scorer import initial_components, recompute_components
+from soul.memory.scorer import recompute_components
 from soul.memory.vector_store import MemoryRecord
 
 
@@ -80,7 +80,11 @@ class MemoryRetriever:
 
             score_row = db.get_memory_score(self.settings.database_url, memory_id)
             if score_row is None:
-                score_row = self._backfill_score_row(row, half_life_days=half_life_days)
+                score_row = self._backfill_score_row(
+                    row,
+                    half_life_days=half_life_days,
+                    cold_threshold=cold_threshold,
+                )
 
             tier = str(row.get("tier", "present"))
             if passive and tier == "cold":
@@ -165,13 +169,21 @@ class MemoryRetriever:
             "tier": "present",
         }
 
-    def _backfill_score_row(self, memory_row: dict[str, object], *, half_life_days: float) -> dict[str, object]:
-        components = initial_components(
+    def _backfill_score_row(
+        self,
+        memory_row: dict[str, object],
+        *,
+        half_life_days: float,
+        cold_threshold: float,
+    ) -> dict[str, object]:
+        components = recompute_components(
             emotional_tag=str(memory_row.get("emotional_tag") or ""),
             memory_timestamp=str(memory_row.get("timestamp", db.utcnow_iso())),
             word_count=int(memory_row.get("word_count") or 0),
+            ref_count=int(memory_row.get("ref_count") or 0),
             flagged=bool(int(memory_row.get("flagged") or 0)),
             half_life_days=half_life_days,
+            cold_threshold=cold_threshold,
         )
         db.upsert_memory_score(
             self.settings.database_url,

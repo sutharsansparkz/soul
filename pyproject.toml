@@ -45,6 +45,7 @@ all = [
 [project.scripts]
 soul = "soul.cli:main"
 soul-telegram = "soul.telegram_bot:main"
+soul-migrate-postgres = "scripts.migrate_postgres:main"
 
 [tool.setuptools]
 include-package-data = true
