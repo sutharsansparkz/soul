@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import ast
+from pathlib import Path
+
 from soul.config import Settings
 
 
@@ -38,3 +41,27 @@ def test_connection_urls_are_redacted_for_cli_output():
     assert payload["redis_url"] == settings.redacted_redis_url
     assert "db-secret" not in str(payload["database_url"])
     assert "redis-secret" not in str(payload["redis_url"])
+
+
+def test_get_settings_is_not_called_at_module_level():
+    """Ensure no soul module stores get_settings() at import time."""
+    soul_dir = Path("soul")
+    for py_file in soul_dir.rglob("*.py"):
+        source = py_file.read_text(encoding="utf-8")
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(node.value, ast.Call):
+                        func = node.value.func
+                        name = (
+                            func.id if isinstance(func, ast.Name)
+                            else func.attr if isinstance(func, ast.Attribute)
+                            else ""
+                        )
+                        assert name != "get_settings", (
+                            f"Module-level get_settings() call found in {py_file}"
+                        )

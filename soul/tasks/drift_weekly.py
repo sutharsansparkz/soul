@@ -22,13 +22,14 @@ def run_drift_task(personality_path: str | Path, log_path: str | Path, resonance
     current = json.loads(personality_file.read_text(encoding="utf-8")) if personality_file.exists() else {}
     current = merge_with_baseline(current)
     updated = run_weekly_drift(current, resonance_signals)
+    run_date = datetime.now(timezone.utc).date().isoformat()
     personality_file.parent.mkdir(parents=True, exist_ok=True)
     personality_file.write_text(json.dumps(updated, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
     repo = DriftLogRepository(log_path)
     runs = repo.load()
     runs.append(
         DriftRun(
-            run_date=datetime.now(timezone.utc).date().isoformat(),
+            run_date=run_date,
             dimensions_before=current,
             dimensions_after=updated,
             resonance_signals=resonance_signals,
@@ -36,6 +37,19 @@ def run_drift_task(personality_path: str | Path, log_path: str | Path, resonance
         )
     )
     repo.save(runs)
+    settings = get_settings()
+    if settings.database_url:
+        try:
+            db.insert_drift_log(
+                settings.database_url,
+                run_date=runs[-1].run_date,
+                dimensions_before=runs[-1].dimensions_before,
+                dimensions_after=runs[-1].dimensions_after,
+                resonance_signals=runs[-1].resonance_signals,
+                notes=runs[-1].notes,
+            )
+        except Exception:
+            pass
     return DriftTaskResult(updated=updated, log_path=str(Path(log_path)))
 
 

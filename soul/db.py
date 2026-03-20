@@ -177,6 +177,38 @@ def init_db(database: Path | str) -> None:
     migrate_postgres_jsonb(database_url)
 
 
+def insert_drift_log(
+    database: Path | str,
+    *,
+    run_date: str,
+    dimensions_before: dict,
+    dimensions_after: dict,
+    resonance_signals: dict,
+    notes: str = "",
+) -> str:
+    log_id = str(uuid.uuid4())
+    with _get_engine(database).begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO drift_log (id, run_date, dimensions_before,
+                    dimensions_after, resonance_signals, notes)
+                VALUES (:id, :run_date, :dimensions_before,
+                    :dimensions_after, :resonance_signals, :notes)
+                """
+            ),
+            {
+                "id": log_id,
+                "run_date": run_date,
+                "dimensions_before": json.dumps(dimensions_before, ensure_ascii=True),
+                "dimensions_after": json.dumps(dimensions_after, ensure_ascii=True),
+                "resonance_signals": json.dumps(resonance_signals, ensure_ascii=True),
+                "notes": notes,
+            },
+        )
+    return log_id
+
+
 def migrate_postgres_jsonb(database: Path | str) -> dict[str, object]:
     database_url = _normalize_database(database)
     if not database_url.startswith(("postgresql://", "postgres://")):
