@@ -25,6 +25,10 @@ class ReflectionRepository:
     def __init__(self, path: str | Path):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            self.path.parent.chmod(0o700)
+        except OSError:
+            pass
 
     def load(self) -> list[ReflectionEntry]:
         if not self.path.exists():
@@ -36,6 +40,10 @@ class ReflectionRepository:
         items = self.load()
         items.append(entry)
         self.path.write_text(json.dumps([asdict(item) for item in items], indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+        try:
+            self.path.chmod(0o600)
+        except OSError:
+            pass
 
 
 def generate_monthly_reflection(settings: Settings | None = None) -> ReflectionEntry | None:

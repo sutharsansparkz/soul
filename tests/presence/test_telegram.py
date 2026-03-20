@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import socket
 from types import SimpleNamespace
+from urllib.error import URLError
 
 from soul.config import Settings
 from soul.presence.telegram import TelegramBotRunner, TelegramClient, TelegramUpdate
@@ -32,7 +34,7 @@ def test_telegram_client_uses_payload_and_opener():
         def read(self):
             return self._body
 
-    def opener(request):
+    def opener(request, timeout=None):
         captured["url"] = request.full_url
         captured["data"] = request.data
         return Response(b'{"ok": true, "result": true}')
@@ -50,7 +52,7 @@ def test_telegram_client_uses_payload_and_opener():
 def test_bot_runner_parses_updates():
     runner = TelegramBotRunner(
         runtime=SimpleNamespace(handle_text=lambda *args, **kwargs: SimpleNamespace(reply_text="hi")),
-        telegram_client=TelegramClient(token="abc123", opener=lambda request: None),
+        telegram_client=TelegramClient(token="abc123", opener=lambda request, timeout=None: None),
     )
 
     update = runner._parse_update(
@@ -79,7 +81,7 @@ def test_bot_runner_requires_single_allowed_chat(tmp_path):
     called = {"count": 0}
     runner = TelegramBotRunner(
         runtime=SimpleNamespace(handle_text=lambda *args, **kwargs: called.__setitem__("count", called["count"] + 1)),
-        telegram_client=TelegramClient(token="abc123", opener=lambda request: None),
+        telegram_client=TelegramClient(token="abc123", opener=lambda request, timeout=None: None),
         settings=settings,
     )
 
@@ -99,7 +101,7 @@ def test_bot_runner_status_requires_valid_chat_id(tmp_path):
     )
     runner = TelegramBotRunner(
         runtime=SimpleNamespace(handle_text=lambda *args, **kwargs: SimpleNamespace(reply_text="hi")),
-        telegram_client=TelegramClient(token="abc123", opener=lambda request: None),
+        telegram_client=TelegramClient(token="abc123", opener=lambda request, timeout=None: None),
         settings=settings,
     )
 
@@ -107,3 +109,14 @@ def test_bot_runner_status_requires_valid_chat_id(tmp_path):
 
     assert status["telegram"].startswith("disabled")
     assert status["allowed_chat"] == "unset"
+
+
+def test_telegram_client_raises_urlerror_on_timeout():
+    def timeout_opener(request, timeout=None):  # noqa: ARG001
+        raise URLError(socket.timeout("timed out"))
+
+    client = TelegramClient(token="abc123", opener=timeout_opener, timeout=5)
+    result = client.send_message(42, "hello")
+
+    assert result.ok is False
+    assert result.error is not None

@@ -10,6 +10,9 @@ from urllib.request import Request, urlopen
 from soul.config import Settings, get_settings
 
 
+_HTTP_TIMEOUT_SECONDS: int = 30
+
+
 @dataclass(slots=True)
 class VoiceTranscriptionResult:
     ok: bool
@@ -41,7 +44,7 @@ class VoiceBridge:
         self,
         settings: Settings | None = None,
         *,
-        opener: Callable[[Request], object] | None = None,
+        opener: Callable[..., object] | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self._open = opener or urlopen
@@ -86,6 +89,10 @@ class VoiceBridge:
 
         output = Path(output_path) if output_path else self.settings.soul_data_dir / "voice" / "recording.wav"
         output.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            output.parent.chmod(0o700)
+        except OSError:
+            pass
 
         try:
             recording = sd.rec(int(seconds * sample_rate), samplerate=sample_rate, channels=1, dtype="int16")
@@ -95,6 +102,10 @@ class VoiceBridge:
                 handle.setsampwidth(2)
                 handle.setframerate(sample_rate)
                 handle.writeframes(recording.tobytes())
+            try:
+                output.chmod(0o600)
+            except OSError:
+                pass
             return VoiceRecordingResult(ok=True, output_path=str(output), backend="sounddevice")
         except Exception as exc:
             return VoiceRecordingResult(ok=False, output_path=None, backend="sounddevice", error=str(exc))
@@ -110,6 +121,10 @@ class VoiceBridge:
 
         output = Path(output_path) if output_path else self.settings.soul_data_dir / "voice" / "latest.mp3"
         output.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            output.parent.chmod(0o700)
+        except OSError:
+            pass
 
         payload = json.dumps(
             {
@@ -130,8 +145,12 @@ class VoiceBridge:
         )
 
         try:
-            with self._open(request) as response:
+            with self._open(request, _HTTP_TIMEOUT_SECONDS) as response:
                 output.write_bytes(response.read())
+            try:
+                output.chmod(0o600)
+            except OSError:
+                pass
             return VoiceSynthesisResult(ok=True, output_path=str(output), backend="elevenlabs")
         except URLError as exc:
             return VoiceSynthesisResult(ok=False, output_path=None, backend="elevenlabs", error=str(exc))

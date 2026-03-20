@@ -405,6 +405,10 @@ def archive_and_purge_old_session_messages(
     sessions = db.list_completed_sessions_with_messages_before(database_url, ended_before=cutoff)
     archive_path = Path(archive_dir)
     archive_path.mkdir(parents=True, exist_ok=True)
+    try:
+        archive_path.chmod(0o700)
+    except OSError:
+        pass
 
     archived_sessions = 0
     purged_messages = 0
@@ -436,6 +440,10 @@ def archive_and_purge_old_session_messages(
                     "\n".join(json.dumps(item, ensure_ascii=True) for item in payload) + ("\n" if payload else ""),
                     encoding="utf-8",
                 )
+                try:
+                    file_path.chmod(0o600)
+                except OSError:
+                    pass
             deleted = db.delete_session_messages(database_url, session_id)
             purged_messages += deleted
             archived_sessions += 1

@@ -48,7 +48,7 @@ app.add_typer(memories_app, name="memories")
 app.add_typer(story_app, name="story")
 app.add_typer(db_app, name="db")
 
-console = Console()
+console = Console(width=120)
 
 
 def _bootstrap() -> tuple[Settings, Soul]:
@@ -60,11 +60,27 @@ def _bootstrap() -> tuple[Settings, Soul]:
 
 
 def _ensure_runtime_files(settings: Settings) -> None:
-    settings.soul_data_dir.mkdir(parents=True, exist_ok=True)
+    def _mkdir_secure(path: Path) -> None:
+        """Create directory with restrictive permissions (rwx-------)."""
+        path.mkdir(parents=True, exist_ok=True)
+        try:
+            path.chmod(0o700)
+        except OSError:
+            pass
+
+    def _write_secure(path: Path, content: str) -> None:
+        """Write file and immediately restrict to owner-only (rw-------)."""
+        path.write_text(content, encoding="utf-8")
+        try:
+            path.chmod(0o600)
+        except OSError:
+            pass
+
+    _mkdir_secure(settings.soul_data_dir)
     if settings.database_is_sqlite:
-        settings.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
-    settings.session_log_dir.mkdir(parents=True, exist_ok=True)
-    settings.session_archive_dir.mkdir(parents=True, exist_ok=True)
+        _mkdir_secure(settings.sqlite_path.parent)
+    _mkdir_secure(settings.session_log_dir)
+    _mkdir_secure(settings.session_archive_dir)
 
     for path, default in (
         (settings.reach_out_candidates_file, "[]\n"),
@@ -77,7 +93,7 @@ def _ensure_runtime_files(settings: Settings) -> None:
         (settings.milestones_file, "[]\n"),
     ):
         if not path.exists():
-            path.write_text(default, encoding="utf-8")
+            _write_secure(path, default)
 
 
 def _print_header(soul: Soul, session_id: str, mood: MoodSnapshot | None = None) -> None:

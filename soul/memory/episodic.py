@@ -17,6 +17,7 @@ from .vector_store import LocalVectorStore, MemoryRecord, build_vector_store
 class EpisodicMemoryRepository:
     def __init__(self, store_path: str | Path, *, settings: Settings | None = None):
         self.settings = settings or get_settings()
+        db.init_db(self.settings.database_url)
         self.embedder = LocalHybridEmbedder(self.settings)
         try:
             ensure_fts_index(self.settings.database_url)

@@ -24,7 +24,7 @@ EMOTION_INTENSITY_MAP: dict[str, float] = {
     "celebrating": 0.75,
     "reflective": 0.60,
     "curious": 0.45,
-    "neutral": 0.30,
+    "neutral": 0.10,
 }
 
 

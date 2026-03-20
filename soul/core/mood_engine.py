@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import cached_property
@@ -126,7 +127,7 @@ class MoodEngine:
         lowered = text.casefold()
 
         for mood, needles in self.USER_RULES:
-            if any(needle in lowered for needle in needles):
+            if any(re.search(rf"\b{re.escape(needle)}\b", lowered) for needle in needles):
                 return mood, 0.77, f"matched heuristic keywords for {mood}"
 
         if len(text.split()) <= 4 and any(word in lowered for word in ("tired", "done", "ugh")):

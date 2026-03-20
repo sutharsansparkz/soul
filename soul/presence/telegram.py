@@ -14,6 +14,7 @@ from soul.presence.runtime import PresenceRuntime, PresenceTurnResult
 
 
 JsonDict = dict[str, object]
+_HTTP_TIMEOUT_SECONDS: int = 30
 
 
 @dataclass(slots=True)
@@ -40,11 +41,13 @@ class TelegramClient:
         token: str | None = None,
         *,
         base_url: str = "https://api.telegram.org",
-        opener: Callable[[Request], object] | None = None,
+        opener: Callable[..., object] | None = None,
+        timeout: int = _HTTP_TIMEOUT_SECONDS,
     ) -> None:
         self.token = token or ""
         self.base_url = base_url.rstrip("/")
         self._open = opener or urlopen
+        self._timeout = timeout
 
     @property
     def enabled(self) -> bool:
@@ -79,7 +82,7 @@ class TelegramClient:
         if offset is not None:
             params["offset"] = offset
         request = Request(f"{self.api_root}/getUpdates?{urlencode(params)}", method="GET")
-        with self._open(request) as response:
+        with self._open(request, self._timeout) as response:
             payload = json.loads(response.read().decode("utf-8"))
         return list(payload.get("result", []))
 
@@ -90,7 +93,7 @@ class TelegramClient:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with self._open(request) as response:
+        with self._open(request, self._timeout) as response:
             return json.loads(response.read().decode("utf-8"))
 
 

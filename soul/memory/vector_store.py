@@ -48,6 +48,11 @@ class LocalVectorStore:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.touch(exist_ok=True)
+        try:
+            self.path.parent.chmod(0o700)
+            self.path.chmod(0o600)
+        except OSError:
+            pass
 
     def add(self, record: MemoryRecord) -> None:
         with self.path.open("a", encoding="utf-8") as handle:
@@ -102,6 +107,10 @@ class LocalVectorStore:
     def clear(self) -> int:
         existing = self.load_all()
         self.path.write_text("", encoding="utf-8")
+        try:
+            self.path.chmod(0o600)
+        except OSError:
+            pass
         return len(existing)
 
     def update(self, memory_id: str, *, metadata: dict[str, object], ref_count: int | None = None) -> None:
