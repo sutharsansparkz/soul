@@ -24,24 +24,18 @@ class LLMClient:
     def __init__(self, settings: Settings, soul: Soul) -> None:
         self.settings = settings
         self.soul = soul
-        self._anthropic = None
         self._openai = None
 
-        if settings.anthropic_api_key:
-            anthropic_api_key = settings.anthropic_api_key.get_secret_value()
-            try:
-                from anthropic import Anthropic
-
-                self._anthropic = Anthropic(api_key=anthropic_api_key)
-            except Exception:
-                self._anthropic = None
-
         if settings.openai_api_key:
-            openai_api_key = settings.openai_api_key.get_secret_value()
             try:
                 from openai import OpenAI
 
-                self._openai = OpenAI(api_key=openai_api_key)
+                # base_url lets any OpenAI-compatible endpoint be used
+                # (e.g. Ollama, LM Studio, Together AI, Azure OpenAI, etc.)
+                self._openai = OpenAI(
+                    api_key=settings.openai_api_key.get_secret_value(),
+                    base_url=settings.openai_base_url or None,
+                )
             except Exception:
                 self._openai = None
 
@@ -53,19 +47,20 @@ class LLMClient:
         mood: MoodSnapshot,
         stream_handler: StreamHandler | None = None,
     ) -> LLMResult:
-        errors: list[str] = []
-
-        if self._anthropic is not None:
-            try:
-                return self._reply_anthropic(system_prompt, messages, stream_handler)
-            except Exception as exc:
-                errors.append(f"anthropic: {exc}")
-
         if self._openai is not None:
             try:
                 return self._reply_openai(system_prompt, messages, stream_handler)
             except Exception as exc:
-                errors.append(f"openai: {exc}")
+                error = str(exc)
+                fallback_text = self._offline_reply(messages[-1]["content"], mood)
+                self._emit(stream_handler, fallback_text)
+                return LLMResult(
+                    text=fallback_text,
+                    provider="offline",
+                    model="heuristic-companion",
+                    fallback_used=True,
+                    error=error,
+                )
 
         fallback_text = self._offline_reply(messages[-1]["content"], mood)
         self._emit(stream_handler, fallback_text)
@@ -74,7 +69,7 @@ class LLMClient:
             provider="offline",
             model="heuristic-companion",
             fallback_used=True,
-            error=" | ".join(errors) if errors else None,
+            error=None,
         )
 
     def complete_text(
@@ -97,30 +92,6 @@ class LLMClient:
             stream_handler=stream_handler,
         )
 
-    def _reply_anthropic(
-        self,
-        system_prompt: str,
-        messages: list[dict[str, str]],
-        stream_handler: StreamHandler | None,
-    ) -> LLMResult:
-        chunks: list[str] = []
-        with self._anthropic.messages.stream(
-            model=self.settings.llm_model,
-            max_tokens=self.settings.llm_max_tokens,
-            temperature=0.8,
-            system=system_prompt,
-            messages=messages,
-        ) as stream:
-            for text in stream.text_stream:
-                chunks.append(text)
-                self._emit(stream_handler, text)
-        return LLMResult(
-            text="".join(chunks).strip(),
-            provider="anthropic",
-            model=self.settings.llm_model,
-            fallback_used=False,
-        )
-
     def _reply_openai(
         self,
         system_prompt: str,
@@ -129,7 +100,7 @@ class LLMClient:
     ) -> LLMResult:
         chunks: list[str] = []
         stream = self._openai.chat.completions.create(
-            model=self.settings.fallback_llm_model,
+            model=self.settings.llm_model,
             temperature=0.8,
             stream=True,
             messages=[{"role": "system", "content": system_prompt}, *messages],
@@ -143,7 +114,7 @@ class LLMClient:
         return LLMResult(
             text="".join(chunks).strip(),
             provider="openai",
-            model=self.settings.fallback_llm_model,
+            model=self.settings.llm_model,
             fallback_used=False,
         )
 

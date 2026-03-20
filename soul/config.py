@@ -21,16 +21,17 @@ def _redact_url_credentials(value: str) -> str:
 
 
 class Settings(BaseSettings):
-    anthropic_api_key: SecretStr | None = Field(default=None, alias="ANTHROPIC_API_KEY")
     openai_api_key: SecretStr | None = Field(default=None, alias="OPENAI_API_KEY")
+    # Base URL for any OpenAI-compatible API (Ollama, LM Studio, Together AI, Azure, etc.)
+    # Leave unset to use the default OpenAI endpoint (https://api.openai.com/v1).
+    openai_base_url: str | None = Field(default=None, alias="OPENAI_BASE_URL")
 
     database_url: str = Field(default="sqlite:///./soul_data/db/soul.db", alias="DATABASE_URL")
     soul_data_path: str = Field(default="./soul_data", alias="SOUL_DATA_DIR")
     redis_url: str = Field(default="redis://localhost:6379", alias="REDIS_URL")
 
-    llm_model: str = Field(default="claude-sonnet-4-6", alias="LLM_MODEL")
+    llm_model: str = Field(default="gpt-4o", alias="LLM_MODEL")
     llm_max_tokens: int = Field(default=800, alias="LLM_MAX_TOKENS")
-    fallback_llm_model: str = Field(default="gpt-4o", alias="FALLBACK_LLM_MODEL")
     hybrid_embeddings: bool = Field(default=False, alias="HYBRID_EMBEDDINGS")
     hybrid_model: str = Field(default="all-MiniLM-L6-v2", alias="HYBRID_MODEL")
     memory_retrieval_k: int = Field(default=5, alias="MEMORY_RETRIEVAL_K")
@@ -47,7 +48,10 @@ class Settings(BaseSettings):
         default="cardiffnlp/twitter-roberta-base-emotion",
         alias="MOOD_MODEL_NAME",
     )
-    mood_model_enabled: bool = Field(default=False, alias="MOOD_MODEL_ENABLED")
+    # When True (default), the HuggingFace classifier is used if transformers is installed.
+    # Falls back to keyword heuristics silently when the library is absent.
+    # Set MOOD_MODEL_ENABLED=false to always use heuristics (faster cold-start).
+    mood_model_enabled: bool = Field(default=True, alias="MOOD_MODEL_ENABLED")
     mood_decay_hours: int = Field(default=18, alias="MOOD_DECAY_HOURS")
     raw_retention_days: int = Field(default=90, alias="RAW_RETENTION_DAYS")
     redis_key_prefix: str = Field(default="soul", alias="REDIS_KEY_PREFIX")
@@ -155,7 +159,7 @@ class Settings(BaseSettings):
 
     def as_redacted_dict(self) -> dict[str, object]:
         redacted = self.model_dump()
-        for key in ("anthropic_api_key", "openai_api_key", "elevenlabs_api_key", "telegram_bot_token"):
+        for key in ("openai_api_key", "elevenlabs_api_key", "telegram_bot_token"):
             if redacted.get(key):
                 redacted[key] = "***redacted***"
         redacted["root_dir"] = str(self.root_dir)
