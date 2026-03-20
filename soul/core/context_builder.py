@@ -24,11 +24,13 @@ class ContextBuilder:
         self.settings = settings
         self.soul = soul
         self.story_repo = UserStoryRepository(settings.user_story_file)
+        self._personality_file = settings.personality_file
         self.episodic_repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
 
     def build(self, *, session_id: str, user_input: str, mood: MoodSnapshot) -> ContextBundle:
         recent_messages = db.get_recent_session_messages(self.settings.database_url, session_id, limit=12)
         story_summary = self._story_summary()
+        personality_hint = self._personality_context()
         memory_snippets = self._memory_context(user_input)
 
         system_parts = [
@@ -40,6 +42,8 @@ class ContextBuilder:
         ]
         if story_summary:
             system_parts.extend(["", "[user_story]", story_summary])
+        if personality_hint:
+            system_parts.extend(["", "[personality_drift]", personality_hint])
         if memory_snippets:
             system_parts.extend(["", "[memory_context]"])
             system_parts.extend(memory_snippets)
@@ -76,6 +80,50 @@ class ContextBuilder:
         if story.things_they_love:
             parts.append(f"Things they love: {', '.join(story.things_they_love)}")
         return "\n".join(parts) if parts else None
+
+    def _personality_context(self) -> str | None:
+        if not self._personality_file.exists():
+            return None
+        try:
+            import json
+
+            dims = json.loads(self._personality_file.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+        if not isinstance(dims, dict) or not dims:
+            return None
+
+        dimension_hints: dict[str, tuple[str, str]] = {
+            "humor_intensity": ("serious and measured", "playful, witty, light"),
+            "response_length": ("terse and brief", "expansive and thorough"),
+            "curiosity_depth": ("surface-level questions", "deep, probing follow-ups"),
+            "directness": ("gentle and indirect", "blunt and plain-spoken"),
+            "warmth_expression": ("reserved and contained", "openly warm and affectionate"),
+        }
+        baseline = 0.5
+        threshold = 0.04
+
+        lines: list[str] = []
+        for dim, value in dims.items():
+            if dim not in dimension_hints:
+                continue
+            try:
+                score = float(value)
+            except (TypeError, ValueError):
+                continue
+            delta = score - baseline
+            if abs(delta) < threshold:
+                continue
+            low_end, high_end = dimension_hints[dim]
+            label = dim.replace("_", " ")
+            if delta > 0:
+                lines.append(f"- {label}: lean toward {high_end} (score {score:.2f})")
+            else:
+                lines.append(f"- {label}: lean toward {low_end} (score {score:.2f})")
+
+        if not lines:
+            return None
+        return "Your current personality drift:\n" + "\n".join(lines)
 
     def _memory_context(self, query: str) -> list[str]:
         episodic = self.episodic_repo.retrieve(

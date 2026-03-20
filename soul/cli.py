@@ -155,6 +155,67 @@ def _render_story(path: Path) -> None:
     console.print_json(json.dumps(payload))
 
 
+def _refresh_reach_out_candidates(settings: Settings) -> None:
+    """Refresh reach-out candidates on chat startup. Silent and best-effort."""
+    try:
+        story_repo = UserStoryRepository(settings.user_story_file)
+        last_message_at = db.get_last_message_timestamp(settings.database_url)
+        now = datetime.now(timezone.utc)
+        days_since_last_chat: int | None = None
+        if last_message_at:
+            timestamp = datetime.fromisoformat(last_message_at)
+            days_since_last_chat = (now - timestamp).days
+        stress_events = db.list_user_message_moods_since(
+            settings.database_url,
+            moods=("stressed", "overwhelmed", "venting"),
+            since=(now.replace(microsecond=0) - timedelta(days=14)).isoformat(),
+        )
+        stress_signal_dates = [str(item["created_at"]) for item in stress_events]
+        milestones_today: list[str] = []
+        for milestone in db.list_milestones(settings.database_url, limit=200):
+            occurred_at = str(milestone.get("occurred_at", ""))
+            try:
+                occurred = datetime.fromisoformat(occurred_at)
+            except ValueError:
+                continue
+            if (occurred.month, occurred.day) == (now.month, now.day):
+                milestones_today.append(str(milestone.get("note") or milestone.get("kind") or "Milestone"))
+        candidates = build_reach_out_candidates(
+            days_since_last_chat=days_since_last_chat,
+            story=story_repo.load(),
+            today=now,
+            stress_signal_dates=stress_signal_dates,
+            milestones_today=milestones_today,
+        )
+        save_reach_out_candidates(settings.reach_out_candidates_file, candidates)
+    except Exception:
+        pass
+
+
+def _show_pending_reach_outs(settings: Settings, soul: Soul) -> None:
+    """Show pending CLI reach-out messages once, then clear them."""
+    if settings.telegram_bot_token and settings.telegram_chat_id:
+        return
+
+    candidates = load_reach_out_candidates(settings.reach_out_candidates_file)
+    if not candidates:
+        return
+
+    for candidate in candidates[:1]:
+        console.print()
+        console.print(
+            Panel(
+                f"[italic]{candidate.message}[/italic]",
+                title=f"[dim]{soul.name}[/dim]",
+                box=box.SIMPLE,
+                border_style="magenta",
+            )
+        )
+        console.print()
+
+    save_reach_out_candidates(settings.reach_out_candidates_file, [])
+
+
 def _voice_output(voice_bridge: VoiceBridge, enabled: bool, text: str) -> None:
     if not enabled:
         return
@@ -268,6 +329,7 @@ def chat(
     record_seconds: int = typer.Option(0, "--record-seconds", help="Record microphone input before the session when sounddevice is available."),
 ) -> None:
     settings, soul = _bootstrap()
+    _refresh_reach_out_candidates(settings)
     if replay:
         _show_last_session(settings)
 
@@ -298,6 +360,7 @@ def chat(
 
     try:
         _print_header(soul, session_id)
+        _show_pending_reach_outs(settings, soul)
         while True:
             if pending_inputs:
                 user_input = pending_inputs.pop(0)
