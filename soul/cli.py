@@ -4,7 +4,7 @@ import json
 import os
 import shlex
 import subprocess
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import typer
@@ -21,7 +21,7 @@ from soul.config import Settings, get_settings
 from soul.core.context_builder import ContextBuilder
 from soul.core.llm_client import LLMClient, LLMResult
 from soul.core.mood_engine import MoodEngine, MoodSnapshot
-from soul.core.presence_context import build_presence_context
+from soul.core.presence_context import build_presence_context, runtime_now
 from soul.core.post_processor import PostProcessor
 from soul.core.soul_loader import Soul, load_soul
 from soul.evolution.drift_engine import DriftLogRepository
@@ -87,6 +87,19 @@ def _relative_time(iso_str: str) -> str:
         return f"{months} months ago"
     years = days // 365
     return f"{years} year{'s' if years > 1 else ''} ago"
+
+
+def _parse_iso_datetime(value: str) -> datetime:
+    dt = datetime.fromisoformat(value)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _format_countdown(count: int, singular: str, plural: str | None = None) -> str:
+    plural = plural or f"{singular}s"
+    unit = singular if count == 1 else plural
+    return f"{count} {unit} away"
 
 
 def _bootstrap() -> tuple[Settings, Soul]:
@@ -800,10 +813,10 @@ def status() -> None:
     voice_bridge = VoiceBridge(settings)
     telegram_runner = TelegramBotRunner(settings=settings)
     story_repo = UserStoryRepository(settings.user_story_file)
-    now = datetime.now(timezone.utc)
+    now = runtime_now(settings)
     total_sessions = db.count_sessions(settings.database_url)
     total_messages = db.count_messages(settings.database_url)
-    presence_context = build_presence_context(settings.database_url, settings)
+    presence_context = build_presence_context(settings.database_url, settings, now=now)
 
     _ = build_reach_out_candidates(
         days_since_last_chat=presence_context["days_since_last_chat"],
@@ -832,7 +845,7 @@ def status() -> None:
     table.add_row("Reach-out candidates", str(len(queued_candidates)))
     table.add_row("Voice", voice_bridge.status()["voice"])
     table.add_row("Telegram", telegram_runner.status()["telegram"])
-    table.add_row("Next milestone", _next_milestone_label(settings, total_messages))
+    table.add_row("Next milestone", _next_milestone_label(settings, total_messages, now=now))
     console.print(table)
 
 
@@ -862,8 +875,8 @@ def run_jobs() -> None:
         resonance_signals=resonance_signals,
     )
     reflection_entry = generate_monthly_reflection(settings)
-    now = datetime.now(timezone.utc)
-    presence_context = build_presence_context(settings.database_url, settings)
+    now = runtime_now(settings)
+    presence_context = build_presence_context(settings.database_url, settings, now=now)
     candidates = build_reach_out_candidates(
         days_since_last_chat=presence_context["days_since_last_chat"],
         story=story_repo.load(),
@@ -937,24 +950,75 @@ def version() -> None:
     console.print(f"SOUL {__version__}")
 
 
-def _next_milestone_label(settings: Settings, total_messages: int) -> str:
-    checks = [
-        ("hundredth_message", f"100th message ({max(0, 100 - total_messages)} away)"),
-        ("seven_day_streak", "7-day conversation streak"),
-        ("first_recurring_phrase", "first recurring phrase"),
-        ("one_month_anniversary", "1-month anniversary"),
-        ("three_month_anniversary", "3-month anniversary"),
-    ]
-    for kind, label in checks:
-        if kind == "hundredth_message":
-            # Show the countdown only while still under 100 messages.
-            # Once reached (or the milestone is already recorded), skip it.
-            if total_messages < 100 and not db.milestone_exists(settings.database_url, kind):
-                return label
+def _conversation_streak_progress(settings: Settings, *, now: datetime) -> int:
+    session_days = sorted(
+        {
+            _parse_iso_datetime(str(session["started_at"])).astimezone(now.tzinfo).date()
+            for session in db.list_sessions(settings.database_url)
+            if session.get("started_at")
+        }
+    )
+    if not session_days:
+        return 0
+
+    latest_day = session_days[-1]
+    if latest_day < now.date() - timedelta(days=1):
+        return 0
+
+    streak = 1
+    for index in range(len(session_days) - 1, 0, -1):
+        current = session_days[index]
+        previous = session_days[index - 1]
+        if (current - previous) == timedelta(days=1):
+            streak += 1
             continue
-        if not db.milestone_exists(settings.database_url, kind):
-            return label
-    return "relationship timeline is active"
+        break
+    return streak
+
+
+def _anniversary_progress(settings: Settings, *, days: int, now: datetime) -> int | None:
+    sessions = db.list_sessions(settings.database_url, limit=1)
+    if not sessions:
+        return None
+    first_date = _parse_iso_datetime(str(sessions[0]["started_at"])).astimezone(now.tzinfo).date()
+    elapsed = (now.date() - first_date).days
+    return max(0, days - elapsed)
+
+
+def _next_milestone_label(settings: Settings, total_messages: int, *, now: datetime | None = None) -> str:
+    now = now or runtime_now(settings)
+    candidates: list[tuple[int, str, str]] = []
+
+    if total_messages < 100 and not db.milestone_exists(settings.database_url, "hundredth_message"):
+        remaining = max(0, 100 - total_messages)
+        candidates.append((3 if remaining > 0 else 0, "hundredth_message", f"100th message ({remaining} away)"))
+
+    if not db.milestone_exists(settings.database_url, "seven_day_streak"):
+        streak = _conversation_streak_progress(settings, now=now)
+        remaining = max(0, 7 - streak) if streak else 7
+        label = "7-day conversation streak (today)" if remaining == 0 else f"7-day conversation streak ({_format_countdown(remaining, 'day')})"
+        candidates.append((remaining, "seven_day_streak", label))
+
+    if not db.milestone_exists(settings.database_url, "one_month_anniversary"):
+        remaining = _anniversary_progress(settings, days=30, now=now)
+        if remaining is not None:
+            label = "1-month anniversary (today)" if remaining == 0 else f"1-month anniversary ({_format_countdown(remaining, 'day')})"
+            candidates.append((remaining, "one_month_anniversary", label))
+
+    if not db.milestone_exists(settings.database_url, "three_month_anniversary"):
+        remaining = _anniversary_progress(settings, days=90, now=now)
+        if remaining is not None:
+            label = "3-month anniversary (today)" if remaining == 0 else f"3-month anniversary ({_format_countdown(remaining, 'day')})"
+            candidates.append((remaining, "three_month_anniversary", label))
+
+    if not db.milestone_exists(settings.database_url, "first_recurring_phrase"):
+        candidates.append((30, "first_recurring_phrase", "first recurring phrase"))
+
+    if not candidates:
+        return "relationship timeline is active"
+
+    _, _, label = min(candidates, key=lambda item: (item[0], item[1]))
+    return label
 
 
 def main() -> None:
