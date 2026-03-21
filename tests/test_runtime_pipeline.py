@@ -187,6 +187,11 @@ def test_chat_voice_mode_uses_recording_when_prompt_is_blank(tmp_path, monkeypat
     monkeypatch.setattr(cli, "ContextBuilder", FakeContextBuilder)
     monkeypatch.setattr(cli, "LLMClient", FakeLLMClient)
     monkeypatch.setattr(cli, "VoiceBridge", FakeVoiceBridge)
+    monkeypatch.setattr(
+        cli.MoodEngine,
+        "_openai_mood",
+        lambda self, text: ("reflective", 0.85, "mock"),
+    )
     monkeypatch.setattr(cli.Prompt, "ask", staticmethod(lambda *args, **kwargs: next(prompts)))
 
     result = CliRunner().invoke(cli.app, ["chat", "--voice"])

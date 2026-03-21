@@ -51,6 +51,11 @@ def test_chat_voice_mode_uses_recorded_transcript_before_prompt(tmp_path, monkey
             backend="elevenlabs",
         ),
     )
+    monkeypatch.setattr(
+        cli.MoodEngine,
+        "_openai_mood",
+        lambda self, text: ("reflective", 0.85, "mock"),
+    )
     monkeypatch.setattr(cli.Prompt, "ask", lambda *args, **kwargs: (_ for _ in ()).throw(EOFError()))
 
     def fake_reply(self, *, system_prompt, messages, mood, stream_handler=None):  # noqa: ARG001
@@ -202,6 +207,11 @@ def test_voice_command_toggles_both_input_and_output(tmp_path, monkeypatch):
             output_path=str(tmp_path / "voice.mp3"),
             backend="elevenlabs",
         ),
+    )
+    monkeypatch.setattr(
+        cli.MoodEngine,
+        "_openai_mood",
+        lambda self, text: ("reflective", 0.85, "mock"),
     )
     monkeypatch.setattr(cli.Prompt, "ask", lambda *args, **kwargs: next(prompts))
 
