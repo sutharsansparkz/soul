@@ -5,6 +5,8 @@ from types import MappingProxyType
 
 import yaml
 
+from soul.core.soul_loader import Soul, compile_system_prompt
+
 
 SOUL_YAML = """
 identity:
@@ -78,3 +80,26 @@ def test_soul_fixture_can_be_frozen_for_immutability():
     assert isinstance(soul, MappingProxyType)
     assert isinstance(soul["character"], MappingProxyType)
     assert isinstance(soul["character"]["quirks"], tuple)
+
+
+def test_compile_system_prompt_includes_identity_speech_patterns():
+    soul = Soul(
+        raw={
+            "identity": {
+                "name": "Ara",
+                "voice": "warm",
+                "energy": "steady",
+                "speech_patterns": ["short clauses", "occasional fragments"],
+            },
+            "character": {},
+            "ethics": {},
+            "worldview": {},
+        },
+        name="Ara",
+        voice="warm",
+        energy="steady",
+    )
+
+    prompt = compile_system_prompt(soul)
+
+    assert "Speech patterns: short clauses, occasional fragments" in prompt

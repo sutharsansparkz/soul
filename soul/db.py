@@ -656,6 +656,14 @@ def search_memories(database: Path | str, query: str, limit: int = 10) -> list[d
 def clear_memories(database: Path | str) -> int:
     with _get_engine(database).begin() as connection:
         result = connection.execute(text("DELETE FROM memories"))
+        connection.execute(
+            text(
+                """
+                DELETE FROM memory_scores
+                WHERE memory_id NOT IN (SELECT id FROM episodic_memory)
+                """
+            )
+        )
     return int(result.rowcount or 0)
 
 

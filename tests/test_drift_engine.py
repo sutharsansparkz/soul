@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import text
 
 from soul import db
+from soul.config import Settings
 from soul.evolution.drift_engine import SOUL_BASELINE, run_weekly_drift
-from soul.tasks.drift_weekly import derive_resonance_signals
+from soul.tasks.drift_weekly import derive_resonance_signals, run_drift_task
 
 
 def test_weekly_drift_applies_small_adjustments():
@@ -40,6 +42,42 @@ def test_weekly_drift_uses_only_known_state_dimensions_and_ignores_extra_signals
 
     assert updated["humor_intensity"] == 0.51
     assert "ignored_signal" not in updated
+
+
+def test_weekly_drift_returns_current_state_when_disabled(tmp_path):
+    settings = Settings(
+        database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
+        soul_data_path=str(tmp_path / "soul_data"),
+        drift_enabled=False,
+    )
+    current = dict(SOUL_BASELINE)
+    current["warmth_expression"] = 0.63
+
+    updated = run_weekly_drift(current, {"warmth_expression": 1.0}, settings=settings)
+
+    assert updated == current
+
+
+def test_run_drift_task_skips_writes_when_disabled(tmp_path):
+    database_url = f"sqlite:///{(tmp_path / 'soul.db').as_posix()}"
+    db.init_db(database_url)
+    settings = Settings(
+        database_url=database_url,
+        soul_data_path=str(tmp_path / "soul_data"),
+        drift_enabled=False,
+    )
+    personality_path = tmp_path / "personality.json"
+    log_path = tmp_path / "drift_log.json"
+    existing = dict(SOUL_BASELINE)
+    existing["directness"] = 0.62
+    personality_path.write_text(json.dumps(existing, ensure_ascii=True), encoding="utf-8")
+
+    result = run_drift_task(personality_path, log_path, {"directness": 1.0}, settings=settings)
+
+    assert result.updated == existing
+    assert json.loads(personality_path.read_text(encoding="utf-8")) == existing
+    assert not log_path.exists()
+    assert db.list_drift_log(database_url) == []
 
 
 def test_derive_resonance_signals_ignores_sessions_older_than_30_days(tmp_path):

@@ -72,12 +72,7 @@ class TelegramClient:
             payload["parse_mode"] = parse_mode
 
         try:
-            response = self._post("sendMessage", payload)
-            if not response.get("ok"):
-                description = response.get("description")
-                error_code = response.get("error_code")
-                error = description or error_code or "telegram api error"
-                return TelegramSendResult(ok=False, chat_id=chat_id, message=text, error=f"telegram_error: {error}")
+            self._post("sendMessage", payload)
             return TelegramSendResult(ok=True, chat_id=chat_id, message=text)
         except URLError as exc:
             return TelegramSendResult(ok=False, chat_id=chat_id, message=text, error=f"telegram_error: {exc.reason}")

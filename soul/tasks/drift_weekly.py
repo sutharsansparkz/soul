@@ -17,11 +17,20 @@ class DriftTaskResult:
     log_path: str
 
 
-def run_drift_task(personality_path: str | Path, log_path: str | Path, resonance_signals: dict[str, float]) -> DriftTaskResult:
+def run_drift_task(
+    personality_path: str | Path,
+    log_path: str | Path,
+    resonance_signals: dict[str, float],
+    *,
+    settings=None,
+) -> DriftTaskResult:
+    resolved_settings = settings or get_settings()
     personality_file = Path(personality_path)
     current = json.loads(personality_file.read_text(encoding="utf-8")) if personality_file.exists() else {}
     current = merge_with_baseline(current)
-    updated = run_weekly_drift(current, resonance_signals)
+    if not resolved_settings.drift_enabled:
+        return DriftTaskResult(updated=current, log_path=str(Path(log_path)))
+    updated = run_weekly_drift(current, resonance_signals, settings=resolved_settings)
     run_date = datetime.now(timezone.utc).date().isoformat()
     personality_file.parent.mkdir(parents=True, exist_ok=True)
     personality_file.write_text(json.dumps(updated, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
@@ -37,11 +46,10 @@ def run_drift_task(personality_path: str | Path, log_path: str | Path, resonance
         )
     )
     repo.save(runs)
-    settings = get_settings()
-    if settings.database_url:
+    if resolved_settings.database_url:
         try:
             db.insert_drift_log(
-                settings.database_url,
+                resolved_settings.database_url,
                 run_date=runs[-1].run_date,
                 dimensions_before=runs[-1].dimensions_before,
                 dimensions_after=runs[-1].dimensions_after,
@@ -121,6 +129,9 @@ if celery_app is not None:
     def weekly_drift_task() -> dict[str, object]:
         settings = get_settings()
         db.init_db(settings.database_url)
+        if not settings.drift_enabled:
+            current = json.loads(settings.personality_file.read_text(encoding="utf-8")) if settings.personality_file.exists() else {}
+            return {"updated": merge_with_baseline(current), "log_path": str(settings.drift_log_file), "skipped": True}
         signals = derive_resonance_signals(settings.database_url)
-        result = run_drift_task(settings.personality_file, settings.drift_log_file, signals)
-        return {"updated": result.updated, "log_path": result.log_path}
+        result = run_drift_task(settings.personality_file, settings.drift_log_file, signals, settings=settings)
+        return {"updated": result.updated, "log_path": result.log_path, "skipped": False}

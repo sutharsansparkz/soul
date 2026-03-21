@@ -55,7 +55,7 @@ def _fallback_worker() -> None:
             settings=settings,
         )
         drift_signals = derive_resonance_signals(settings.database_url)
-        run_drift_task(settings.personality_file, settings.drift_log_file, drift_signals)
+        run_drift_task(settings.personality_file, settings.drift_log_file, drift_signals, settings=settings)
         decay_result = run_hms_decay()
         reflection_entry = generate_monthly_reflection(settings)
         print(

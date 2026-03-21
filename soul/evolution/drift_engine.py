@@ -33,9 +33,11 @@ def run_weekly_drift(
     from soul.config import get_settings
 
     resolved_settings = settings or get_settings()
+    current = merge_with_baseline(current)
+    if not resolved_settings.drift_enabled:
+        return current
     max_drift = resolved_settings.drift_max_deviation
     weekly_rate = resolved_settings.drift_weekly_rate
-    current = merge_with_baseline(current)
     updated: dict[str, float] = {}
     for dimension, value in current.items():
         signal = resonance_signals.get(dimension, 0.0)

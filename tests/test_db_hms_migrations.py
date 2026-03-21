@@ -83,3 +83,37 @@ def test_init_db_migrates_legacy_hms_tables_with_defaults(tmp_path):
 
     fts_rows = db.search_episodic_memories_fts(database_url, "legacy", user_id="local-user", include_cold=True, limit=5)
     assert fts_rows
+
+
+def test_clear_memories_removes_orphaned_memory_scores(tmp_path):
+    database_url = f"sqlite:///{(tmp_path / 'soul.db').as_posix()}"
+    db.init_db(database_url)
+    db.save_memory(database_url, label="manual", content="manual note", importance=0.6)
+    memory_id = db.create_episodic_memory(
+        database_url,
+        user_id="local-user",
+        session_id="s1",
+        content="episodic note",
+        timestamp="2026-03-19T10:00:00+00:00",
+    )
+    db.upsert_memory_score(
+        database_url,
+        memory_id=memory_id,
+        user_id="local-user",
+        score_emotional=0.5,
+        score_retrieval=0.0,
+        score_temporal=1.0,
+        score_flagged=0.0,
+        score_volume=0.3,
+        hms_score=0.5,
+    )
+
+    with db.connect(database_url) as connection:
+        connection.execute(text("DELETE FROM episodic_memory WHERE id = :memory_id"), {"memory_id": memory_id})
+        connection.commit()
+
+    deleted = db.clear_memories(database_url)
+
+    assert deleted == 1
+    assert db.list_memories(database_url) == []
+    assert db.get_memory_score(database_url, memory_id) is None

@@ -937,6 +937,7 @@ def run_jobs() -> None:
         personality_path=settings.personality_file,
         log_path=settings.drift_log_file,
         resonance_signals=resonance_signals,
+        settings=settings,
     )
     reflection_entry = generate_monthly_reflection(settings)
     now = runtime_now(settings)
