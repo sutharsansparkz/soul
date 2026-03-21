@@ -16,7 +16,8 @@ from soul.presence.runtime import PresenceRuntime, PresenceTurnResult
 
 
 JsonDict = dict[str, object]
-_HTTP_TIMEOUT_SECONDS: int = 40
+_HTTP_TIMEOUT_SECONDS: int = 15
+_LONGPOLL_TIMEOUT_SECONDS: int = 20
 
 
 @dataclass(slots=True)
@@ -72,7 +73,12 @@ class TelegramClient:
             payload["parse_mode"] = parse_mode
 
         try:
-            self._post("sendMessage", payload)
+            response = self._post("sendMessage", payload)
+            if not response.get("ok"):
+                description = response.get("description")
+                error_code = response.get("error_code")
+                error = description or error_code or "telegram api error"
+                return TelegramSendResult(ok=False, chat_id=chat_id, message=text, error=f"telegram_error: {error}")
             return TelegramSendResult(ok=True, chat_id=chat_id, message=text)
         except URLError as exc:
             return TelegramSendResult(ok=False, chat_id=chat_id, message=text, error=f"telegram_error: {exc.reason}")
@@ -87,7 +93,7 @@ class TelegramClient:
         if offset is not None:
             params["offset"] = offset
         request = Request(f"{self.api_root}/getUpdates?{urlencode(params)}", method="GET")
-        http_timeout = min(timeout + 20, 60)
+        http_timeout = min(timeout + _LONGPOLL_TIMEOUT_SECONDS, 60)
         previous_timeout = socket.getdefaulttimeout()
         socket.setdefaulttimeout(http_timeout)
         try:

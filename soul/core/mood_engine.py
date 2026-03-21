@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 import warnings
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -12,6 +13,8 @@ from soul.config import Settings
 
 _LOCAL_STATE_CACHE: dict[str, dict] = {}
 _CLASSIFIER_NOTICE_SHOWN = False
+_CLASSIFIER_DOWNLOAD_NOTICE_SHOWN = False
+_CLASSIFIER_LOAD_NOTICE_SHOWN = False
 
 
 @dataclass(slots=True)
@@ -197,7 +200,7 @@ class MoodEngine:
 
     @cached_property
     def classifier(self):  # type: ignore[no-untyped-def]
-        global _CLASSIFIER_NOTICE_SHOWN
+        global _CLASSIFIER_NOTICE_SHOWN, _CLASSIFIER_DOWNLOAD_NOTICE_SHOWN, _CLASSIFIER_LOAD_NOTICE_SHOWN
         if not self.settings.mood_model_enabled:
             return None
         try:
@@ -205,18 +208,45 @@ class MoodEngine:
         except ImportError:
             if not _CLASSIFIER_NOTICE_SHOWN:
                 warnings.warn(
-                    "Mood classifier is enabled but 'transformers' is not installed. "
-                    "Falling back to keyword heuristics. "
-                    "Install with: pip install transformers torch",
+                    "Mood classifier is enabled (MOOD_MODEL_ENABLED=true) but 'transformers' "
+                    "is not installed. Falling back to keyword heuristics. "
+                    "Install with: pip install transformers torch  "
+                    "OR disable the model with: MOOD_MODEL_ENABLED=false",
                     stacklevel=2,
                 )
                 _CLASSIFIER_NOTICE_SHOWN = True
             return None
         try:
-            return pipeline(
+            model_name = self.settings.mood_model_name
+            try:
+                from huggingface_hub import try_to_load_from_cache
+
+                cached = try_to_load_from_cache(model_name, "config.json")
+                already_cached = isinstance(cached, str)
+            except Exception:
+                already_cached = False
+
+            if not already_cached and not _CLASSIFIER_DOWNLOAD_NOTICE_SHOWN:
+                print(
+                    f"[soul] Downloading mood model {model_name!r} (~500 MB). "
+                    "Set MOOD_MODEL_ENABLED=false to skip.",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                _CLASSIFIER_DOWNLOAD_NOTICE_SHOWN = True
+
+            clf = pipeline(
                 "text-classification",
-                model=self.settings.mood_model_name,
+                model=model_name,
                 return_all_scores=True,
             )
+            if not _CLASSIFIER_LOAD_NOTICE_SHOWN:
+                print(
+                    "[soul] Mood classifier loaded (cardiffnlp/twitter-roberta-base-emotion). "
+                    "Set MOOD_MODEL_ENABLED=false to disable.",
+                    file=sys.stderr,
+                )
+                _CLASSIFIER_LOAD_NOTICE_SHOWN = True
+            return clf
         except Exception:
             return None

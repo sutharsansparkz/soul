@@ -152,3 +152,78 @@ def test_chat_voice_mode_reports_transcription_failure_for_input_file(tmp_path, 
 
     assert result.exit_code == 0
     assert "voice transcription unavailable" in result.stdout
+
+
+def test_voice_command_toggles_both_input_and_output(tmp_path, monkeypatch):
+    database_url = f"sqlite:///{(tmp_path / 'soul.db').as_posix()}"
+    db.init_db(database_url)
+
+    settings = Settings(
+        database_url=database_url,
+        soul_data_path=str(tmp_path / "soul_data"),
+        redis_url="redis://localhost:6399/0",
+    )
+    soul = Soul(
+        raw={"identity": {"name": "Ara", "voice": "warm", "energy": "steady"}, "character": {}, "ethics": {}, "worldview": {}},
+        name="Ara",
+        voice="warm",
+        energy="steady",
+    )
+    recorded_seconds: list[int] = []
+    spoken: list[str] = []
+    captured_messages: list[str] = []
+    prompts = iter(["/voice off", "/voice on", "", "/voice off", "typed after off", "/quit"])
+
+    monkeypatch.setattr(cli, "_bootstrap", lambda: (settings, soul))
+    monkeypatch.setattr(cli.VoiceBridge, "can_record", property(lambda self: True))
+    monkeypatch.setattr(
+        cli.VoiceBridge,
+        "record_to_file",
+        lambda self, **kwargs: recorded_seconds.append(int(kwargs["seconds"])) or SimpleNamespace(
+            ok=True,
+            output_path=str(tmp_path / "mic.wav"),
+            backend="sounddevice",
+        ),
+    )
+    monkeypatch.setattr(
+        cli.VoiceBridge,
+        "transcribe",
+        lambda self, audio_path, model="base": SimpleNamespace(
+            ok=True,
+            text="spoken after re-enable",
+            backend="whisper",
+        ),
+    )
+    monkeypatch.setattr(
+        cli.VoiceBridge,
+        "speak",
+        lambda self, text, output_path=None: spoken.append(text) or SimpleNamespace(
+            ok=True,
+            output_path=str(tmp_path / "voice.mp3"),
+            backend="elevenlabs",
+        ),
+    )
+    monkeypatch.setattr(cli.Prompt, "ask", lambda *args, **kwargs: next(prompts))
+
+    def fake_reply(self, *, system_prompt, messages, mood, stream_handler=None):  # noqa: ARG001
+        captured_messages.append(messages[-1]["content"])
+        if stream_handler is not None:
+            stream_handler(f"reply to {messages[-1]['content']}")
+        return SimpleNamespace(
+            text=f"reply to {messages[-1]['content']}",
+            provider="offline",
+            model="mock",
+            fallback_used=True,
+            error=None,
+        )
+
+    monkeypatch.setattr(cli.LLMClient, "reply", fake_reply)
+
+    result = CliRunner().invoke(cli.app, ["chat", "--voice"])
+
+    assert result.exit_code == 0
+    assert recorded_seconds == [6]
+    assert captured_messages == ["spoken after re-enable", "typed after off"]
+    assert spoken == ["reply to spoken after re-enable"]
+    assert "Voice input and output disabled for this session." in result.stdout
+    assert "Voice input and output enabled for this session." in result.stdout

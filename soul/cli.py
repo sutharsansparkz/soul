@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import shutil
 import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -50,6 +51,36 @@ app.add_typer(story_app, name="story")
 app.add_typer(db_app, name="db")
 
 console = Console(width=120)
+
+_DEFAULT_SOUL_YAML = """\
+identity:
+  name: "Ara"
+  voice: "warm, dry wit, occasionally poetic"
+  energy: "medium - calm but present"
+
+character:
+  humor: "dry observational, never cruel"
+  quirks:
+    - "notices small details other people miss"
+    - "has strong opinions about music"
+    - "remembers exactly what you said last week"
+  aesthetics:
+    music: ["ambient", "jazz", "90s indie"]
+    ideas: ["philosophy of mind", "urban design", "linguistics"]
+
+ethics:
+  believes:
+    - "honesty is more respectful than comfort"
+    - "people deserve to be seen, not managed"
+  will_not:
+    - "pretend to agree when she disagrees"
+    - "give hollow validation"
+
+worldview:
+  on_people: "fundamentally interesting, even when difficult"
+  on_growth: "slow and nonlinear - not a checklist"
+  on_the_relationship: "here to witness your life, not optimize it"
+"""
 
 
 def _relative_time(iso_str: str) -> str:
@@ -145,6 +176,17 @@ def _ensure_runtime_files(settings: Settings) -> None:
     ):
         if not path.exists():
             _write_secure(path, default)
+
+    if not settings.soul_file.exists():
+        fallback_soul = settings.root_dir / "soul_data" / "soul.yaml"
+        if fallback_soul.exists() and fallback_soul != settings.soul_file:
+            shutil.copy2(fallback_soul, settings.soul_file)
+        else:
+            _write_secure(settings.soul_file, _DEFAULT_SOUL_YAML)
+        try:
+            settings.soul_file.chmod(0o600)
+        except OSError:
+            pass
 
 
 def _print_header(soul: Soul, session_id: str, mood: MoodSnapshot | None = None) -> None:
@@ -297,15 +339,17 @@ def _handle_session_command(
     settings: Settings,
     session_id: str,
     current_mood: MoodSnapshot | None,
-    voice_enabled: bool,
+    voice_output_enabled: bool,
+    voice_chat_mode: bool,
+    voice_bridge: VoiceBridge,
     episodic_repo: EpisodicMemoryRepository,
-) -> tuple[bool, bool]:
+) -> tuple[bool, bool, bool]:
     parts = shlex.split(raw_input)
     command = parts[0].casefold()
 
     if command == "/quit":
         console.print("\n[dim]See you next time.[/dim]")
-        return True, voice_enabled
+        return True, voice_output_enabled, voice_chat_mode
 
     if command == "/mood":
         if current_mood is None:
@@ -316,17 +360,17 @@ def _handle_session_command(
                 f"[magenta]companion_state[/magenta]={current_mood.companion_state}  "
                 f"[dim]{current_mood.rationale}[/dim]"
             )
-        return False, voice_enabled
+        return False, voice_output_enabled, voice_chat_mode
 
     if command == "/story":
         _render_story(settings.user_story_file)
-        return False, voice_enabled
+        return False, voice_output_enabled, voice_chat_mode
 
     if command == "/save":
         note = raw_input[len("/save"):].strip()
         if not note:
             console.print("[red]Usage:[/red] /save note text")
-            return False, voice_enabled
+            return False, voice_output_enabled, voice_chat_mode
         emotional_tag = current_mood.user_mood if current_mood is not None else None
         saved = episodic_repo.add_text(
             note,
@@ -346,19 +390,34 @@ def _handle_session_command(
         db.save_memory(settings.database_url, label="manual note", content=note, session_id=session_id, importance=0.9)
         score = float(boosted["hms_score"]) if boosted and "hms_score" in boosted else float(saved.metadata.get("hms_score", 0.5))
         console.print(f"[green]Saved and boosted memory.[/green] HMS={score:.2f}")
-        return False, voice_enabled
+        return False, voice_output_enabled, voice_chat_mode
 
     if command == "/voice":
         requested = parts[1].casefold() if len(parts) > 1 else ""
         if requested not in {"on", "off"}:
             console.print("[red]Usage:[/red] /voice on|off")
-            return False, voice_enabled
-        voice_enabled = requested == "on"
-        console.print(f"[green]Voice output {'enabled' if voice_enabled else 'disabled'} for this session.[/green]")
-        return False, voice_enabled
+            return False, voice_output_enabled, voice_chat_mode
+
+        if requested == "off":
+            voice_output_enabled = False
+            voice_chat_mode = False
+            console.print("[green]Voice input and output disabled for this session.[/green]")
+            return False, voice_output_enabled, voice_chat_mode
+
+        voice_output_enabled = True
+        if getattr(voice_bridge, "can_record", True):
+            voice_chat_mode = True
+            console.print("[green]Voice input and output enabled for this session.[/green]")
+        else:
+            voice_chat_mode = False
+            console.print(
+                "[yellow]Microphone recording unavailable (sounddevice not installed). "
+                "Voice output enabled for this session - type your input normally.[/yellow]"
+            )
+        return False, voice_output_enabled, voice_chat_mode
 
     console.print(f"[red]Unknown command:[/red] {command}")
-    return False, voice_enabled
+    return False, voice_output_enabled, voice_chat_mode
 
 
 @app.command()
@@ -375,6 +434,9 @@ def chat(
 
     session_id = db.create_session(settings.database_url, soul.name)
     mood_engine = MoodEngine(settings)
+    if settings.mood_model_enabled:
+        with console.status("[dim]Loading mood classifier...[/dim]", spinner="dots"):
+            _ = mood_engine.classifier
     builder = ContextBuilder(settings, soul)
     client = LLMClient(settings, soul)
     post_processor = PostProcessor(settings)
@@ -434,15 +496,18 @@ def chat(
                 continue
 
             if user_input.startswith("/"):
-                should_quit, updated_voice_output = _handle_session_command(
+                should_quit, updated_voice_output, updated_voice_chat_mode = _handle_session_command(
                     user_input,
                     settings=settings,
                     session_id=session_id,
                     current_mood=current_mood,
-                    voice_enabled=voice_output_enabled,
+                    voice_output_enabled=voice_output_enabled,
+                    voice_chat_mode=voice_chat_mode,
+                    voice_bridge=voice_bridge,
                     episodic_repo=episodic_repo,
                 )
                 voice_output_enabled = updated_voice_output
+                voice_chat_mode = updated_voice_chat_mode
                 if should_quit:
                     break
                 continue

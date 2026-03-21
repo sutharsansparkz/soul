@@ -12,7 +12,7 @@ This repository now contains a fuller local-to-production runtime:
 - `soul story edit` opens the profile in your configured editor when `SOUL_EDITOR`, `VISUAL`, or `EDITOR` is set.
 - `soul telegram-bot` runs the Telegram polling surface when both a bot token and the allowed chat id are configured.
 - LLM calls use the configured OpenAI-compatible provider first and fall back to an offline heuristic companion response when keys are missing or unavailable.
-- Mood state can persist in Redis, episodic memory retrieval is SQLite FTS5 + HMS reranking, and optional local sentence-transformer embeddings can add cosine signal without external vector infra.
+- Mood classification uses keyword heuristics by default. When `MOOD_MODEL_ENABLED=true` (default) and `transformers` is installed, the `cardiffnlp/twitter-roberta-base-emotion` model (~500 MB) is downloaded from HuggingFace on first use. Set `MOOD_MODEL_ENABLED=false` to disable this and always use the built-in heuristics.
 - Maintenance now includes consolidation, resonance-based drift, proactive reach-out dispatch, monthly reflection generation, and archival/purge of raw session transcripts after retention windows. When LLM credentials are configured, consolidation can enrich the user profile with structured goals, fears, relationships, and shared phrases from completed sessions.
 - `make test` runs the local test suite as `python -m pytest -q` after verifying Python `>=3.11` and `pytest` are installed.
 - `make docker-test` builds the test image, starts the Compose services, and runs the suite inside Docker.

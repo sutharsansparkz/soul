@@ -49,8 +49,8 @@ class Settings(BaseSettings):
         alias="MOOD_MODEL_NAME",
     )
     # When True (default), the HuggingFace classifier is used if transformers is installed.
-    # Falls back to keyword heuristics silently when the library is absent.
-    # Set MOOD_MODEL_ENABLED=false to always use heuristics (faster cold-start).
+    # The first successful load may download the configured model from HuggingFace.
+    # Set MOOD_MODEL_ENABLED=false to always use the built-in keyword heuristics.
     mood_model_enabled: bool = Field(default=True, alias="MOOD_MODEL_ENABLED")
     mood_decay_hours: int = Field(default=18, alias="MOOD_DECAY_HOURS")
     raw_retention_days: int = Field(default=90, alias="RAW_RETENTION_DAYS")
