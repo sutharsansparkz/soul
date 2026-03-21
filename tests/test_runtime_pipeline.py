@@ -178,7 +178,7 @@ def test_chat_voice_mode_uses_recording_when_prompt_is_blank(tmp_path, monkeypat
         def record_to_file(self, *, seconds, sample_rate=16000, output_path=None):  # noqa: ANN001, ARG002
             return SimpleNamespace(ok=True, output_path="capture.wav", backend="sounddevice", error=None)
 
-        def speak(self, text):  # noqa: ANN001, ARG002
+        def speak(self, text, *, output_path=None, autoplay=False):  # noqa: ANN001, ARG002
             return SimpleNamespace(ok=False, output_path=None, backend="elevenlabs", error="disabled")
 
     prompts = iter(["", "/quit"])

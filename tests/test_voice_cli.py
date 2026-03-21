@@ -45,7 +45,7 @@ def test_chat_voice_mode_uses_recorded_transcript_before_prompt(tmp_path, monkey
     monkeypatch.setattr(
         cli.VoiceBridge,
         "speak",
-        lambda self, text, output_path=None: spoken.append(text) or SimpleNamespace(
+        lambda self, text, output_path=None, autoplay=False: spoken.append(text) or SimpleNamespace(
             ok=True,
             output_path=str(tmp_path / "voice.mp3"),
             backend="elevenlabs",
@@ -197,7 +197,7 @@ def test_voice_command_toggles_both_input_and_output(tmp_path, monkeypatch):
     monkeypatch.setattr(
         cli.VoiceBridge,
         "speak",
-        lambda self, text, output_path=None: spoken.append(text) or SimpleNamespace(
+        lambda self, text, output_path=None, autoplay=False: spoken.append(text) or SimpleNamespace(
             ok=True,
             output_path=str(tmp_path / "voice.mp3"),
             backend="elevenlabs",
@@ -227,3 +227,17 @@ def test_voice_command_toggles_both_input_and_output(tmp_path, monkeypatch):
     assert spoken == ["reply to spoken after re-enable"]
     assert "Voice input and output disabled for this session." in result.stdout
     assert "Voice input and output enabled for this session." in result.stdout
+
+
+def test_voice_output_uses_autoplay_flag():
+    captured: dict[str, object] = {}
+
+    class FakeVoiceBridge:
+        def speak(self, text, *, output_path=None, autoplay=False):  # noqa: ANN001, ARG002
+            captured["text"] = text
+            captured["autoplay"] = autoplay
+            return SimpleNamespace(ok=True, output_path="voice.mp3", backend="elevenlabs", played=True)
+
+    cli._voice_output(FakeVoiceBridge(), True, "hello")
+
+    assert captured == {"text": "hello", "autoplay": True}

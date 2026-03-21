@@ -45,3 +45,23 @@ def test_next_milestone_label_surfaces_nearest_anniversary(tmp_path, monkeypatch
     label = cli._next_milestone_label(settings, total_messages=95, now=now)
 
     assert label == "1-month anniversary (1 day away)"
+
+
+def test_next_milestone_label_omits_recurring_phrase_placeholder(tmp_path, monkeypatch):
+    settings = Settings(
+        database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
+        soul_data_path=str(tmp_path / "soul_data"),
+        timezone_name="UTC",
+    )
+    now = datetime(2026, 3, 21, 9, 0, tzinfo=timezone.utc)
+
+    monkeypatch.setattr(cli.db, "list_sessions", lambda database_url, limit=None, completed_only=False: [])
+    monkeypatch.setattr(
+        cli.db,
+        "milestone_exists",
+        lambda database_url, kind: kind in {"hundredth_message", "seven_day_streak", "one_month_anniversary", "three_month_anniversary"},
+    )
+
+    label = cli._next_milestone_label(settings, total_messages=100, now=now)
+
+    assert label == "relationship timeline is active"

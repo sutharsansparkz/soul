@@ -293,12 +293,7 @@ def _show_pending_reach_outs(settings: Settings, soul: Soul) -> None:
 def _voice_output(voice_bridge: VoiceBridge, enabled: bool, text: str) -> None:
     if not enabled:
         return
-    try:
-        result = voice_bridge.speak(text, autoplay=True)
-    except TypeError as exc:
-        if "autoplay" not in str(exc):
-            raise
-        result = voice_bridge.speak(text)
+    result = voice_bridge.speak(text, autoplay=True)
     played = bool(getattr(result, "played", False))
     if result.ok and played:
         console.print("[dim]voice played[/dim]")
@@ -882,14 +877,13 @@ def status() -> None:
     total_messages = db.count_messages(settings.database_url)
     presence_context = build_presence_context(settings.database_url, settings, now=now)
 
-    _ = build_reach_out_candidates(
+    queued_candidates = build_reach_out_candidates(
         days_since_last_chat=presence_context["days_since_last_chat"],
         story=story_repo.load(),
         today=now,
         stress_signal_dates=presence_context["stress_signal_dates"],
         milestones_today=presence_context["milestones_today"],
     )
-    queued_candidates = load_reach_out_candidates(settings.reach_out_candidates_file)
 
     current_state = mood_engine.current_state(settings.user_id) or {}
     mood_state = current_state.get("state") or db.get_last_companion_state(settings.database_url) or "no sessions yet"
@@ -1075,9 +1069,6 @@ def _next_milestone_label(settings: Settings, total_messages: int, *, now: datet
         if remaining is not None:
             label = "3-month anniversary (today)" if remaining == 0 else f"3-month anniversary ({_format_countdown(remaining, 'day')})"
             candidates.append((remaining, "three_month_anniversary", label))
-
-    if not db.milestone_exists(settings.database_url, "first_recurring_phrase"):
-        candidates.append((30, "first_recurring_phrase", "first recurring phrase"))
 
     if not candidates:
         return "relationship timeline is active"

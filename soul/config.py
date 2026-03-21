@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     drift_weekly_rate: float = Field(default=0.01, alias="DRIFT_WEEKLY_RATE")
     environment: str = Field(default="development", alias="ENVIRONMENT")
     user_id: str = Field(default="local-user", alias="SOUL_USER_ID")
-    timezone_name: str = Field(default="Asia/Kolkata", alias="SOUL_TIMEZONE")
+    timezone_name: str = Field(default="UTC", alias="SOUL_TIMEZONE")
     mood_openai_model: str = Field(default="gpt-4o-mini", alias="MOOD_OPENAI_MODEL")
     mood_openai_max_tokens: int = Field(default=60, alias="MOOD_OPENAI_MAX_TOKENS")
     mood_openai_temperature: float = Field(default=0.0, alias="MOOD_OPENAI_TEMPERATURE")

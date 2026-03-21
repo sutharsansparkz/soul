@@ -91,3 +91,7 @@ def test_get_settings_is_not_called_at_module_level():
         visitor = _ImportTimeGetSettingsVisitor()
         visitor.visit(tree)
         assert not visitor.found, f"Module-level get_settings() call found in {py_file}"
+
+
+def test_default_timezone_is_utc():
+    assert Settings.model_fields["timezone_name"].default == "UTC"
