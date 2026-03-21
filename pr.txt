@@ -126,7 +126,7 @@ The soul is stored as `soul_data/soul.yaml` and compiled into an immutable syste
            │
 ┌──────────▼───────────┐
 │      LLM core         │
-│  Claude API / GPT-4o  │
+│  OpenAI API (gpt-4o)  │
 │  Streaming to stdout  │
 └──────────┬───────────┘
            │
@@ -173,15 +173,15 @@ Optional hybrid upgrade (no new infra):
 | Layer | Technology | Purpose |
 |---|---|---|
 | **CLI framework** | Typer + Rich | Terminal UI — colors, spinners, streamed output |
-| **LLM** | Claude API (claude-sonnet-4-6) | Core intelligence |
-| LLM fallback | GPT-4o | Redundancy / cost control |
+| **LLM** | OpenAI API (gpt-4o) | Core intelligence — chat, mood classification, story extraction, reflection |
+| LLM fallback | Heuristic offline replies | Keeps companion functional when API is unavailable |
 | Orchestration | Custom agent loop (pure Python) | Context assembly, tool routing |
 | **Task queue** | Celery + Redis | Background jobs (drift, consolidation) |
 | **Database** | SQLite (single file, always) | Everything — memory, story, scores, drift log |
 | **Full-text search** | SQLite FTS5 + BM25 | Memory retrieval — zero extra infrastructure |
 | **HMS score store** | SQLite `memory_scores` table | Score columns, indexed for fast ranked retrieval |
 | Session cache | Redis | Companion mood state, active session |
-| **Mood detection** | HuggingFace cardiffnlp/roberta | Input emotional tagging |
+| **Mood detection** | OpenAI chat completion (lightweight prompt) | Input emotional tagging via a short structured prompt |
 | STT (optional) | Whisper (local) | Voice input from mic |
 | TTS (optional) | ElevenLabs | Companion speaks back via terminal |
 | Telegram (optional) | Telegram Bot HTTP API (stdlib client) | Access from phone |
@@ -207,7 +207,7 @@ soul/
 │   │   ├── soul_loader.py       # Loads soul.yaml → immutable system prompt
 │   │   ├── context_builder.py   # Assembles full LLM context per request
 │   │   ├── llm_client.py        # LLM abstraction, streams tokens to stdout
-│   │   ├── mood_engine.py       # Detects user mood, manages companion state
+│   │   ├── mood_engine.py       # Classifies user mood via OpenAI prompt, manages companion state
 │   │   └── post_processor.py    # Tags memories, detects milestones
 │   │
 │   ├── memory/
@@ -390,7 +390,7 @@ $ soul memories
 **Tasks:**
 - [ ] Write `soul_data/soul.yaml` (see template below)
 - [ ] `soul_loader.py` — reads YAML, compiles into immutable system prompt string
-- [ ] `llm_client.py` — wraps Claude API, streams tokens to stdout via Rich live display
+- [ ] `llm_client.py` — wraps OpenAI API, streams tokens to stdout via Rich live display
 - [ ] `cli.py` — `soul chat` opens a REPL loop
 - [ ] Log every message to SQLite with timestamp + session ID
 - [ ] Write 20+ test conversations to validate it feels like someone specific
@@ -425,12 +425,22 @@ $ soul chat
 **Goal:** Every conversation feels alive. The companion reads your emotional energy and responds from that space. It has its own emotional state.
 
 **Tasks:**
-- [ ] Integrate HuggingFace mood classifier (`cardiffnlp/twitter-roberta-base-emotion`)
-- [ ] `mood_engine.py` — detects user mood from text, manages companion state machine
+- [ ] `mood_engine.py` — classifies user mood via a short OpenAI chat completion prompt; falls back to keyword heuristics when API is unavailable
+- [ ] Mood prompt returns a structured JSON response: `{"mood": "venting", "confidence": 0.87}`
+- [ ] Manage companion state machine from mood output
 - [ ] Store companion mood state in Redis (persists across sessions, decays slowly to neutral)
 - [ ] Inject `[user_mood: venting] [companion_state: warm]` into LLM context before soul prompt
 - [ ] Show companion mood subtly in Rich status line
 - [ ] Test: does the companion comfort vs celebrate based purely on what you wrote?
+
+**Mood classification prompt (sent to OpenAI):**
+
+```
+Classify the emotional mood of the following user message.
+Return JSON only: {"mood": "<label>", "confidence": <0.0-1.0>}
+Valid mood labels: venting, stressed, celebrating, curious, reflective, overwhelmed, neutral
+Message: "{user_input}"
+```
 
 **Companion mood states:**
 
@@ -458,7 +468,7 @@ $ soul chat
 - [ ] Nightly decay Celery task — recomputes `T` component for all memories, moves sub-0.05 to cold tier
 - [ ] `embedder.py` — *optional* local `sentence-transformers` model, stores embeddings as BLOB column in SQLite
 - [ ] Design + implement `user_story.json` schema (see Data Models)
-- [ ] `user_story.py` — LLM extracts story updates from raw chat and writes to profile
+- [ ] `user_story.py` — OpenAI extracts story updates from raw chat and writes to profile
 - [ ] `shared_language.py` — tracks recurring phrases, nicknames, references
 - [ ] Set up Celery + Redis for async background tasks
 - [ ] Write nightly consolidation Celery task (2am cron)
@@ -483,7 +493,7 @@ Optional hybrid mode (if embedder.py enabled):
 **Nightly consolidation (2am, Celery beat):**
 ```
 Load today's raw session messages
-  → LLM extracts key facts, emotional moments, story updates
+  → OpenAI extracts key facts, emotional moments, story updates
   → Score each extracted memory (HMS initial score)
   → INSERT into episodic_memory + memory_scores (SQLite)
   → FTS5 index auto-updated via trigger
@@ -506,7 +516,7 @@ Load today's raw session messages
 - [ ] Personality dimensions as float weights in `soul_data/personality.json`
 - [ ] Weekly adjustments capped at 1–2% per dimension, hard limit ±20% from baseline
 - [ ] `milestone_tracker.py` — detects + persists relationship milestones
-- [ ] `reflection.py` — monthly LLM self-reflection task, stored as memory
+- [ ] `reflection.py` — monthly OpenAI self-reflection task, stored as memory
 - [ ] `soul drift` CLI — shows personality drift history as a table
 - [ ] `soul milestones` CLI — shows relationship timeline
 
@@ -770,9 +780,12 @@ soul config                    Show current config (keys redacted)
 **`.env`:**
 
 ```bash
-# LLM
-ANTHROPIC_API_KEY=sk-ant-...
-OPENAI_API_KEY=sk-...           # fallback LLM + embeddings
+# LLM + Mood classification
+OPENAI_API_KEY=sk-...
+# Optional: override the API endpoint for any OpenAI-compatible provider
+# (Ollama, LM Studio, Together AI, Azure OpenAI, etc.)
+# Leave unset to use the default OpenAI endpoint.
+OPENAI_BASE_URL=
 
 # Database
 DATABASE_URL=sqlite:///./soul_data/db/soul.db
@@ -794,14 +807,17 @@ ELEVENLABS_VOICE_ID=
 TELEGRAM_BOT_TOKEN=
 
 # Behaviour
-LLM_MODEL=claude-sonnet-4-6
-# HYBRID_MODEL embedding is handled locally — no OpenAI key needed for memory
+LLM_MODEL=gpt-4o
 MEMORY_RETRIEVAL_K=5
 MEMORY_CANDIDATE_K=20           # BM25 candidates before HMS reranking
 HMS_SEMANTIC_WEIGHT=0.55        # weight for semantic similarity in retrieval blend
 HMS_SCORE_WEIGHT=0.45           # weight for HMS score in retrieval blend
 HMS_DECAY_HALFLIFE_DAYS=30      # temporal decay half-life
 HMS_COLD_THRESHOLD=0.05         # score below this → cold tier
+# Mood classification: when true, uses OpenAI to classify mood each turn.
+# Falls back to keyword heuristics when API is unavailable or key is missing.
+MOOD_MODEL_ENABLED=true
+MOOD_DECAY_HOURS=18
 DRIFT_ENABLED=true
 ENVIRONMENT=development
 ```
@@ -822,7 +838,7 @@ docker-compose up -d redis
 
 # 3. Configure
 cp .env.example .env
-# Fill in your API keys
+# Fill in your OPENAI_API_KEY
 
 # 4. Init database
 soul db init
@@ -854,6 +870,10 @@ celery -A soul.tasks beat --loglevel=info     # triggers nightly / weekly jobs
 **4. Drift is slow and bounded.** Max 1–2% shift per personality dimension per week, hard-capped at ±20% from soul baseline. Prevents the companion from becoming a mirror of the user while still allowing genuine evolution over months.
 
 **5. Memory consolidation is nightly, not real-time.** Real-time updates create noise. The nightly pass lets the system synthesize a session with distance — similar to how humans consolidate memory during sleep.
+
+**6. One API key, everything.** The OpenAI key powers chat, mood classification, story extraction, and monthly reflection. No second vendor, no extra credentials, no model mismatch risk. Mood classification uses a lightweight structured prompt that adds negligible cost per turn.
+
+**7. Keyword heuristics as fallback, not primary.** Mood detection calls OpenAI with a short structured prompt when the API is available. If the key is missing or the call fails, keyword heuristics take over silently. The companion keeps working; the classification is just less precise.
 
 **8. Memory is scored, not equal.** The Human Memory Scoring System (HMS) assigns every stored memory a living composite score based on emotional intensity, how often it's been recalled, recency, whether it was flagged, and how much the user said about it. Retrieval blends semantic similarity with HMS score — so a vivid emotional memory from months ago will still surface when relevant, while a trivial remark from yesterday fades away. This is how human memory actually works.
 
