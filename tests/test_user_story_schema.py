@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+from soul.memory.user_story import UserStory, ensure_story_defaults
+
 from soul.memory.user_story import _capture_after
 
 
@@ -89,3 +91,10 @@ def test_capture_after_handles_no_sentence_boundary():
     result = _capture_after(original, lowered, "i live in ")
 
     assert result == "Chennai"
+
+
+def test_ensure_story_defaults_seeds_optional_birthday_field():
+    story = ensure_story_defaults(UserStory())
+
+    assert "birthday" in story.basics
+    assert story.basics["birthday"] == ""

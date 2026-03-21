@@ -87,6 +87,7 @@ class UserStoryRepository:
 def ensure_story_defaults(story: UserStory) -> UserStory:
     story.user_id = story.user_id or "unknown"
     story.basics = story.basics or {}
+    story.basics.setdefault("birthday", "")
     story.current_chapter = story.current_chapter or {
         "summary": "",
         "active_goals": [],

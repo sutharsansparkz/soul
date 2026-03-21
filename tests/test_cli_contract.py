@@ -10,6 +10,7 @@ CORE_COMMANDS = {
     "soul status",
     "soul run-jobs",
     "soul db init",
+    "soul db rebuild-fts",
     "soul config",
 }
 
@@ -19,7 +20,8 @@ IN_SESSION_COMMANDS = {"/quit", "/save", "/mood", "/story", "/voice"}
 def test_cli_surface_matches_the_spec():
     assert "soul chat" in CORE_COMMANDS
     assert "soul status" in CORE_COMMANDS
-    assert len(CORE_COMMANDS) == 9
+    assert "soul db rebuild-fts" in CORE_COMMANDS
+    assert len(CORE_COMMANDS) == 10
 
 
 def test_in_session_commands_are_present():
