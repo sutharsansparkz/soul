@@ -1,12 +1,42 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from soul import db
 from soul.config import Settings
 
 
-def build_presence_context(database_url: str, settings: Settings) -> dict[str, object]:
+def runtime_timezone(settings: Settings) -> ZoneInfo:
+    try:
+        return ZoneInfo(settings.timezone_name)
+    except ZoneInfoNotFoundError:
+        return ZoneInfo("UTC")
+
+
+def runtime_now(settings: Settings, *, now: datetime | None = None) -> datetime:
+    if now is None:
+        base = datetime.now(timezone.utc)
+    elif now.tzinfo is None:
+        base = now.replace(tzinfo=timezone.utc)
+    else:
+        base = now.astimezone(timezone.utc)
+    return base.astimezone(runtime_timezone(settings))
+
+
+def _parse_runtime_timestamp(value: str, *, settings: Settings) -> datetime:
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(runtime_timezone(settings))
+
+
+def build_presence_context(
+    database_url: str,
+    settings: Settings,
+    *,
+    now: datetime | None = None,
+) -> dict[str, object]:
     """Build the shared presence context for proactive tasks.
 
     Args:
@@ -19,19 +49,18 @@ def build_presence_context(database_url: str, settings: Settings) -> dict[str, o
         A dict with `days_since_last_chat`, `stress_signal_dates`, and
         `milestones_today` keys.
     """
-    # Current milestone and presence context is global in this single-user design.
-    _ = settings
-    now = datetime.now(timezone.utc)
+    now_local = runtime_now(settings, now=now)
+    now_utc = now_local.astimezone(timezone.utc)
     last_message_at = db.get_last_message_timestamp(database_url)
     days_since_last_chat: int | None = None
     if last_message_at:
-        timestamp = datetime.fromisoformat(last_message_at)
-        days_since_last_chat = (now - timestamp).days
+        timestamp = _parse_runtime_timestamp(last_message_at, settings=settings)
+        days_since_last_chat = (now_local - timestamp).days
 
     stress_events = db.list_user_message_moods_since(
         database_url,
         moods=("stressed", "overwhelmed", "venting"),
-        since=(now.replace(microsecond=0) - timedelta(days=14)).isoformat(),
+        since=(now_utc.replace(microsecond=0) - timedelta(days=14)).isoformat(),
     )
     stress_signal_dates = [str(item["created_at"]) for item in stress_events]
 
@@ -39,20 +68,24 @@ def build_presence_context(database_url: str, settings: Settings) -> dict[str, o
     for milestone in db.list_milestones(database_url, limit=200):
         occurred_at = str(milestone.get("occurred_at", ""))
         try:
-            occurred = datetime.fromisoformat(occurred_at)
+            occurred = _parse_runtime_timestamp(occurred_at, settings=settings)
         except ValueError:
             continue
-        if (occurred.month, occurred.day) == (now.month, now.day):
+        if (occurred.month, occurred.day) == (now_local.month, now_local.day):
             milestones_today.append(str(milestone.get("note") or milestone.get("kind") or "Milestone"))
 
     first_sessions = db.list_sessions(database_url, limit=1)
     if first_sessions:
         first_started = str(first_sessions[0].get("started_at", ""))
         try:
-            first_date = datetime.fromisoformat(first_started)
+            first_date = _parse_runtime_timestamp(first_started, settings=settings)
         except ValueError:
             first_date = None
-        if first_date and first_date.year < now.year and (first_date.month, first_date.day) == (now.month, now.day):
+        if (
+            first_date
+            and first_date.year < now_local.year
+            and (first_date.month, first_date.day) == (now_local.month, now_local.day)
+        ):
             milestones_today.append("relationship anniversary")
 
     return {

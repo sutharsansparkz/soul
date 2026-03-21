@@ -41,7 +41,7 @@ In-session commands (`soul chat`):
 
 ## Configuration variables (key subset)
 
-- `LLM_MAX_TOKENS` — maximum tokens for Anthropic completions (default: 800)
+- `LLM_MAX_TOKENS` — maximum tokens for OpenAI-compatible chat completions (default: 800)
 
 ## Memory command contracts
 

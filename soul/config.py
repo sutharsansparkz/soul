@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     drift_enabled: bool = Field(default=True, alias="DRIFT_ENABLED")
     environment: str = Field(default="development", alias="ENVIRONMENT")
     user_id: str = Field(default="local-user", alias="SOUL_USER_ID")
-    timezone_name: str = Field(default="Asia/Calcutta", alias="SOUL_TIMEZONE")
+    timezone_name: str = Field(default="Asia/Kolkata", alias="SOUL_TIMEZONE")
     mood_model_name: str = Field(
         default="cardiffnlp/twitter-roberta-base-emotion",
         alias="MOOD_MODEL_NAME",
