@@ -16,7 +16,7 @@ class LLMResult:
     text: str
     provider: str
     model: str
-    fallback_used: bool
+    fallback_used: bool  # always False; retained for API compatibility
     error: str | None = None
 
 
@@ -27,50 +27,26 @@ class LLMClient:
         self._openai = None
 
         if settings.openai_api_key:
-            try:
-                from openai import OpenAI
+            from openai import OpenAI
 
-                # base_url lets any OpenAI-compatible endpoint be used
-                # (e.g. Ollama, LM Studio, Together AI, Azure OpenAI, etc.)
-                self._openai = OpenAI(
-                    api_key=settings.openai_api_key.get_secret_value(),
-                    base_url=settings.openai_base_url or None,
-                )
-            except Exception:
-                self._openai = None
+            # base_url lets any OpenAI-compatible endpoint be used
+            # (e.g. Ollama, LM Studio, Together AI, Azure OpenAI, etc.)
+            self._openai = OpenAI(
+                api_key=settings.openai_api_key.get_secret_value(),
+                base_url=settings.openai_base_url or None,
+            )
 
     def reply(
         self,
         *,
         system_prompt: str,
         messages: list[dict[str, str]],
-        mood: MoodSnapshot,
+        mood: MoodSnapshot,  # retained for API compatibility
         stream_handler: StreamHandler | None = None,
     ) -> LLMResult:
-        if self._openai is not None:
-            try:
-                return self._reply_openai(system_prompt, messages, stream_handler)
-            except Exception as exc:
-                error = str(exc)
-                fallback_text = self._offline_reply(messages[-1]["content"], mood)
-                self._emit(stream_handler, fallback_text)
-                return LLMResult(
-                    text=fallback_text,
-                    provider="offline",
-                    model="heuristic-companion",
-                    fallback_used=True,
-                    error=error,
-                )
-
-        fallback_text = self._offline_reply(messages[-1]["content"], mood)
-        self._emit(stream_handler, fallback_text)
-        return LLMResult(
-            text=fallback_text,
-            provider="offline",
-            model="heuristic-companion",
-            fallback_used=True,
-            error=None,
-        )
+        if self._openai is None:
+            raise RuntimeError("OPENAI_API_KEY is required. Set it in your .env file.")
+        return self._reply_openai(system_prompt, messages, stream_handler)
 
     def complete_text(
         self,
@@ -117,20 +93,6 @@ class LLMClient:
             model=self.settings.llm_model,
             fallback_used=False,
         )
-
-    def _offline_reply(self, user_input: str, mood: MoodSnapshot) -> str:
-        lowered = user_input.strip().rstrip("?!.")
-        if mood.companion_state == "warm":
-            return f"That sounds rough. I'm here with you. What part of \"{lowered}\" hit the hardest?"
-        if mood.companion_state == "quiet":
-            return "That sounds like a lot. We can keep this small. Do you want to put one piece of it into words?"
-        if mood.companion_state == "concerned":
-            return "I can hear the pressure in that. What feels most urgent right now, and what feels merely loud?"
-        if mood.companion_state == "playful":
-            return f"That has good energy. Tell me the full story behind \"{lowered}\"."
-        if mood.companion_state == "reflective":
-            return "That has a late-night kind of gravity to it. What are you circling around beneath the surface?"
-        return f"I'm listening. Say a little more about \"{lowered}\"."
 
     def _emit(self, stream_handler: StreamHandler | None, text: str) -> None:
         if stream_handler is not None:

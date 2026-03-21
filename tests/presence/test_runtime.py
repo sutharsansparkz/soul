@@ -27,6 +27,11 @@ def test_presence_runtime_closes_session_on_llm_exception(tmp_path, monkeypatch)
     def boom(*args, **kwargs):  # noqa: ANN002, ANN003
         raise RuntimeError("LLM exploded")
 
+    monkeypatch.setattr(
+        runtime.mood_engine,
+        "_openai_mood",
+        lambda text: ("venting", 0.85, "mock"),
+    )
     monkeypatch.setattr(runtime.client, "reply", boom)
 
     with pytest.raises(RuntimeError, match="LLM exploded"):

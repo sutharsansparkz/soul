@@ -274,7 +274,7 @@ class MemoryRetriever:
         content_tokens = {token.casefold() for token in content.split() if token.strip()}
         overlap = len(query_tokens & content_tokens)
         overlap_score = overlap / max(1, len(query_tokens))
-        substring_boost = 0.35 if query.casefold() in content.casefold() else 0.0
+        substring_boost = self.settings.memory_substring_boost if query.casefold() in content.casefold() else 0.0
         return min(1.0, overlap_score + substring_boost)
 
     def _normalize_bm25_rows(self, rows: list[dict[str, object]]) -> dict[str, float]:

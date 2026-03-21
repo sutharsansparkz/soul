@@ -13,18 +13,23 @@ from soul.tasks.consolidate import StructuredSessionInsights, consolidate_day
 from typer.testing import CliRunner
 
 
-def test_mood_engine_degrades_cleanly_when_redis_is_unavailable(tmp_path):
+def test_mood_engine_uses_local_state_cache_when_redis_is_unavailable(tmp_path, monkeypatch):
     settings = Settings(
         database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
         soul_data_path=str(tmp_path / "soul_data"),
         redis_url="redis://localhost:6399/0",
     )
     engine = MoodEngine(settings)
+    monkeypatch.setattr(
+        MoodEngine,
+        "_openai_mood",
+        lambda self, text: ("venting", 0.85, "mock"),
+    )
 
     snapshot = engine.analyze("I had a rough day today.")
 
-    assert snapshot.user_mood in {"venting", "overwhelmed", "stressed", "neutral"}
-    assert snapshot.companion_state in {"warm", "quiet", "concerned", "curious", "reflective", "playful", "neutral"}
+    assert snapshot.user_mood == "venting"
+    assert snapshot.companion_state == "warm"
 
 
 def test_mood_engine_decays_to_neutral_after_decay_window():
@@ -140,7 +145,7 @@ def test_chat_voice_mode_uses_recording_when_prompt_is_blank(tmp_path, monkeypat
                 stream_handler("I heard you.")
             return SimpleNamespace(
                 text="I heard you.",
-                provider="offline",
+                provider="mock-openai",
                 model="test-model",
                 fallback_used=False,
                 error=None,

@@ -434,9 +434,6 @@ def chat(
 
     session_id = db.create_session(settings.database_url, soul.name)
     mood_engine = MoodEngine(settings)
-    if settings.mood_model_enabled:
-        with console.status("[dim]Loading mood classifier...[/dim]", spinner="dots"):
-            _ = mood_engine.classifier
     builder = ContextBuilder(settings, soul)
     client = LLMClient(settings, soul)
     post_processor = PostProcessor(settings)
@@ -781,18 +778,20 @@ def _record_retrieval_rank(record, *, query: str) -> float:
             return float(raw)
         except (TypeError, ValueError):
             pass
+    settings = get_settings()
     semantic = _simple_similarity(query, str(record.content))
-    return (semantic * 0.55) + (_record_hms_score(record) * 0.45)
+    return (semantic * settings.hms_semantic_weight) + (_record_hms_score(record) * settings.hms_score_weight)
 
 
 def _simple_similarity(query: str, content: str) -> float:
+    settings = get_settings()
     query_tokens = {token.casefold() for token in query.split() if token.strip()}
     if not query_tokens:
         return 0.0
     content_tokens = {token.casefold() for token in content.split() if token.strip()}
     overlap = len(query_tokens & content_tokens) / max(1, len(query_tokens))
     if query.casefold() in content.casefold():
-        overlap += 0.35
+        overlap += settings.memory_substring_boost
     return _clamp01(overlap)
 
 

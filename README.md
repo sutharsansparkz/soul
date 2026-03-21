@@ -11,8 +11,8 @@ This repository now contains a fuller local-to-production runtime:
 - `soul memories` now shows HMS-ranked memory tiers with score bars; `soul memories search` performs unified search across episodic + manual memory with HMS-aware ranking; `soul memories top|cold|boost` expose vivid/cold/manual-boost workflows; and `soul memories clear` clears all memory surfaces.
 - `soul story edit` opens the profile in your configured editor when `SOUL_EDITOR`, `VISUAL`, or `EDITOR` is set.
 - `soul telegram-bot` runs the Telegram polling surface when both a bot token and the allowed chat id are configured.
-- LLM calls use the configured OpenAI-compatible provider first and fall back to an offline heuristic companion response when keys are missing or unavailable.
-- Mood classification uses keyword heuristics by default. When `MOOD_MODEL_ENABLED=true` (default) and `transformers` is installed, the `cardiffnlp/twitter-roberta-base-emotion` model (~500 MB) is downloaded from HuggingFace on first use. Set `MOOD_MODEL_ENABLED=false` to disable this and always use the built-in heuristics.
+- One API key, everything. The OpenAI key powers chat, mood classification, story extraction, and monthly reflection. No second vendor, no extra credentials, no model mismatch risk.
+- Mood classification uses a short OpenAI chat completion prompt (model: `gpt-4o-mini` by default) - the same API key, no extra downloads, no HuggingFace dependency. Configure the model via `MOOD_OPENAI_MODEL` in your `.env` file.
 - Maintenance now includes consolidation, resonance-based drift, proactive reach-out dispatch, monthly reflection generation, and archival/purge of raw session transcripts after retention windows. When LLM credentials are configured, consolidation can enrich the user profile with structured goals, fears, relationships, and shared phrases from completed sessions.
 - `make test` runs the local test suite as `python -m pytest -q` after verifying Python `>=3.11` and `pytest` are installed.
 - `make docker-test` builds the test image, starts the Compose services, and runs the suite inside Docker.
@@ -71,7 +71,7 @@ The implementation includes the main architecture from the design spec:
 - immutable prompt compilation
 - `DATABASE_URL`-driven persistence with SQLite-first storage and additive schema migrations
 - configurable runtime state via `SOUL_DATA_DIR`
-- heuristic mood detection with optional transformers classifier and Redis-backed companion state
+- OpenAI mood classification with Redis-backed companion state
 - user story, milestones, shared language, consolidation, resonance-based weekly drift, monthly reflection, and proactive reach-out candidate generation
 - FTS-backed episodic retrieval (`memory_fts`) with HMS scoring (`memory_scores`)
 - optional hybrid local embeddings (`HYBRID_EMBEDDINGS=true`) stored in SQLite `embedding` BLOB column

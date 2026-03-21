@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from datetime import datetime, timezone
-import math
 
 
 @dataclass(slots=True)
@@ -32,10 +32,13 @@ def clamp01(value: float) -> float:
     return max(0.0, min(1.0, float(value)))
 
 
-def decay_rate_from_halflife(half_life_days: float) -> float:
+def decay_rate_from_halflife(half_life_days: float, *, settings=None) -> float:
+    from soul.config import get_settings
+
+    resolved_settings = settings or get_settings()
     if half_life_days <= 0:
         return 1.0
-    return math.log(2) / half_life_days
+    return resolved_settings.hms_ln2 / half_life_days
 
 
 def score_temporal(
@@ -54,7 +57,7 @@ def score_temporal(
     age_days = max(0.0, (now - created_at).total_seconds() / 86_400)
     if half_life_days <= 0:
         return 0.0
-    return clamp01(math.exp(-math.log(2) * age_days / half_life_days))
+    return clamp01(math.exp(-decay_rate_from_halflife(half_life_days) * age_days))
 
 
 def score_retrieval(ref_count: int) -> float:

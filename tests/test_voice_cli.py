@@ -59,9 +59,9 @@ def test_chat_voice_mode_uses_recorded_transcript_before_prompt(tmp_path, monkey
             stream_handler("reply text")
         return SimpleNamespace(
             text="reply text",
-            provider="offline",
+            provider="mock-openai",
             model="mock",
-            fallback_used=True,
+            fallback_used=False,
             error=None,
         )
 
@@ -211,9 +211,9 @@ def test_voice_command_toggles_both_input_and_output(tmp_path, monkeypatch):
             stream_handler(f"reply to {messages[-1]['content']}")
         return SimpleNamespace(
             text=f"reply to {messages[-1]['content']}",
-            provider="offline",
+            provider="mock-openai",
             model="mock",
-            fallback_used=True,
+            fallback_used=False,
             error=None,
         )
 

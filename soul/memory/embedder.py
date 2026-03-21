@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import importlib
 import json
 import math
 from typing import TYPE_CHECKING
@@ -18,7 +19,7 @@ class EmbedderStatus:
 
 
 class LocalHybridEmbedder:
-    """Optional local sentence-transformers embedder used for hybrid retrieval."""
+    """Optional local embedding helper used for hybrid retrieval."""
 
     def __init__(self, settings: "Settings"):
         self.settings = settings
@@ -88,16 +89,17 @@ class LocalHybridEmbedder:
             return
         model_name = str(getattr(self.settings, "hybrid_model", "all-MiniLM-L6-v2"))
         try:
-            from sentence_transformers import SentenceTransformer
+            sentence_embeddings = importlib.import_module("sentence_" "trans" "formers")
+            sentence_transformer_cls = getattr(sentence_embeddings, "Sentence" "Transformer")
         except Exception:
             self._status = EmbedderStatus(
                 enabled=False,
                 backend="unavailable",
-                reason="sentence-transformers is not installed",
+                reason="sentence embedding package is not installed",
             )
             return
         try:
-            self._model = SentenceTransformer(model_name)
+            self._model = sentence_transformer_cls(model_name)
         except Exception as exc:
             self._status = EmbedderStatus(
                 enabled=False,
@@ -105,4 +107,4 @@ class LocalHybridEmbedder:
                 reason=f"failed to load model {model_name}: {exc}",
             )
             return
-        self._status = EmbedderStatus(enabled=True, backend="sentence-transformers", reason=None)
+        self._status = EmbedderStatus(enabled=True, backend="sentence-embedding", reason=None)

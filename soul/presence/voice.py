@@ -14,9 +14,6 @@ from urllib.request import Request, urlopen
 from soul.config import Settings, get_settings
 
 
-_HTTP_TIMEOUT_SECONDS: int = 30
-
-
 @dataclass(slots=True)
 class VoiceTranscriptionResult:
     ok: bool
@@ -60,6 +57,7 @@ class VoiceBridge:
     ) -> None:
         self.settings = settings or get_settings()
         self._open = opener or urlopen
+        self._http_timeout = self.settings.elevenlabs_http_timeout
 
     @property
     def elevenlabs_enabled(self) -> bool:
@@ -176,7 +174,7 @@ class VoiceBridge:
         )
 
         try:
-            with self._open(request, _HTTP_TIMEOUT_SECONDS) as response:
+            with self._open(request, self._http_timeout) as response:
                 content_type = ""
                 if hasattr(response, "headers") and response.headers:
                     content_type = response.headers.get("Content-Type", "")

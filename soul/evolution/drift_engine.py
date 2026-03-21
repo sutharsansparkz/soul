@@ -14,9 +14,6 @@ SOUL_BASELINE: dict[str, float] = {
     "warmth_expression": 0.5,
 }
 
-MAX_DRIFT = 0.20
-WEEKLY_RATE = 0.01
-
 
 @dataclass(slots=True)
 class DriftRun:
@@ -27,15 +24,25 @@ class DriftRun:
     notes: str = ""
 
 
-def run_weekly_drift(current: dict[str, float], resonance_signals: dict[str, float]) -> dict[str, float]:
+def run_weekly_drift(
+    current: dict[str, float],
+    resonance_signals: dict[str, float],
+    *,
+    settings=None,
+) -> dict[str, float]:
+    from soul.config import get_settings
+
+    resolved_settings = settings or get_settings()
+    max_drift = resolved_settings.drift_max_deviation
+    weekly_rate = resolved_settings.drift_weekly_rate
     current = merge_with_baseline(current)
     updated: dict[str, float] = {}
     for dimension, value in current.items():
         signal = resonance_signals.get(dimension, 0.0)
         baseline = SOUL_BASELINE.get(dimension, value)
-        new_value = value + (signal * WEEKLY_RATE)
-        lower = baseline - MAX_DRIFT
-        upper = baseline + MAX_DRIFT
+        new_value = value + (signal * weekly_rate)
+        lower = baseline - max_drift
+        upper = baseline + max_drift
         updated[dimension] = round(max(lower, min(upper, new_value)), 4)
     return updated
 

@@ -16,8 +16,6 @@ from soul.presence.runtime import PresenceRuntime, PresenceTurnResult
 
 
 JsonDict = dict[str, object]
-_HTTP_TIMEOUT_SECONDS: int = 15
-_LONGPOLL_TIMEOUT_SECONDS: int = 20
 
 
 @dataclass(slots=True)
@@ -45,13 +43,14 @@ class TelegramClient:
         *,
         base_url: str = "https://api.telegram.org",
         opener: Callable[..., object] | None = None,
-        timeout: int = _HTTP_TIMEOUT_SECONDS,
+        timeout: int = 15,
+        longpoll_extra: int = 20,
     ) -> None:
         self.token = token or ""
         self.base_url = base_url.rstrip("/")
         self._open = opener or urlopen
-        # _timeout applies to _post/send_message; get_updates computes its own long-poll timeout.
         self._timeout = timeout
+        self._longpoll_extra = longpoll_extra
 
     @property
     def enabled(self) -> bool:
@@ -93,7 +92,7 @@ class TelegramClient:
         if offset is not None:
             params["offset"] = offset
         request = Request(f"{self.api_root}/getUpdates?{urlencode(params)}", method="GET")
-        http_timeout = min(timeout + _LONGPOLL_TIMEOUT_SECONDS, 60)
+        http_timeout = min(timeout + self._longpoll_extra, 60)
         previous_timeout = socket.getdefaulttimeout()
         socket.setdefaulttimeout(http_timeout)
         try:
@@ -133,7 +132,11 @@ class TelegramBotRunner:
         self.settings = settings or get_settings()
         self.runtime = runtime or PresenceRuntime(self.settings)
         token = self.settings.telegram_bot_token.get_secret_value() if self.settings.telegram_bot_token else None
-        self.telegram = telegram_client or TelegramClient(token)
+        self.telegram = telegram_client or TelegramClient(
+            token,
+            timeout=self.settings.telegram_http_timeout,
+            longpoll_extra=self.settings.telegram_longpoll_extra_seconds,
+        )
 
     def status(self) -> dict[str, str]:
         allowed_chat_id = self._configured_chat_id()

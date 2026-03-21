@@ -301,8 +301,6 @@ def _extract_structured_insights(user_lines: list[str], settings: Settings) -> S
                 + "\n".join(f"- {line}" for line in user_lines)
             ),
         )
-        if result.provider == "offline":
-            return None
         return _parse_structured_insights(result.text)
     except Exception as exc:
         logger.warning("Structured insight extraction failed: %s", exc, exc_info=True)

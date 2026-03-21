@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 from functools import lru_cache
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
@@ -36,30 +35,44 @@ class Settings(BaseSettings):
     hybrid_model: str = Field(default="all-MiniLM-L6-v2", alias="HYBRID_MODEL")
     memory_retrieval_k: int = Field(default=5, alias="MEMORY_RETRIEVAL_K")
     memory_candidate_k: int = Field(default=20, alias="MEMORY_CANDIDATE_K")
+    memory_substring_boost: float = Field(default=0.35, alias="MEMORY_SUBSTRING_BOOST")
     hms_semantic_weight: float = Field(default=0.55, alias="HMS_SEMANTIC_WEIGHT")
     hms_score_weight: float = Field(default=0.45, alias="HMS_SCORE_WEIGHT")
     hms_decay_halflife_days: float = Field(default=30.0, alias="HMS_DECAY_HALFLIFE_DAYS")
     hms_cold_threshold: float = Field(default=0.05, alias="HMS_COLD_THRESHOLD")
+    hms_ln2: float = Field(default=0.6931471805599453, alias="HMS_LN2")
     drift_enabled: bool = Field(default=True, alias="DRIFT_ENABLED")
+    drift_max_deviation: float = Field(default=0.20, alias="DRIFT_MAX_DEVIATION")
+    drift_weekly_rate: float = Field(default=0.01, alias="DRIFT_WEEKLY_RATE")
     environment: str = Field(default="development", alias="ENVIRONMENT")
     user_id: str = Field(default="local-user", alias="SOUL_USER_ID")
     timezone_name: str = Field(default="Asia/Kolkata", alias="SOUL_TIMEZONE")
-    mood_model_name: str = Field(
-        default="cardiffnlp/twitter-roberta-base-emotion",
-        alias="MOOD_MODEL_NAME",
+    mood_openai_model: str = Field(default="gpt-4o-mini", alias="MOOD_OPENAI_MODEL")
+    mood_openai_max_tokens: int = Field(default=60, alias="MOOD_OPENAI_MAX_TOKENS")
+    mood_openai_temperature: float = Field(default=0.0, alias="MOOD_OPENAI_TEMPERATURE")
+    mood_valid_labels: list[str] = Field(
+        default=[
+            "venting",
+            "stressed",
+            "celebrating",
+            "curious",
+            "reflective",
+            "overwhelmed",
+            "neutral",
+        ],
+        alias="MOOD_VALID_LABELS",
     )
-    # When True (default), the HuggingFace classifier is used if transformers is installed.
-    # The first successful load may download the configured model from HuggingFace.
-    # Set MOOD_MODEL_ENABLED=false to always use the built-in keyword heuristics.
-    mood_model_enabled: bool = Field(default=True, alias="MOOD_MODEL_ENABLED")
     mood_decay_hours: int = Field(default=18, alias="MOOD_DECAY_HOURS")
     raw_retention_days: int = Field(default=90, alias="RAW_RETENTION_DAYS")
     redis_key_prefix: str = Field(default="soul", alias="REDIS_KEY_PREFIX")
 
     elevenlabs_api_key: SecretStr | None = Field(default=None, alias="ELEVENLABS_API_KEY")
     elevenlabs_voice_id: str | None = Field(default=None, alias="ELEVENLABS_VOICE_ID")
+    elevenlabs_http_timeout: int = Field(default=30, alias="ELEVENLABS_HTTP_TIMEOUT")
     telegram_bot_token: SecretStr | None = Field(default=None, alias="TELEGRAM_BOT_TOKEN")
     telegram_chat_id: str | None = Field(default=None, alias="TELEGRAM_CHAT_ID")
+    telegram_http_timeout: int = Field(default=15, alias="TELEGRAM_HTTP_TIMEOUT")
+    telegram_longpoll_extra_seconds: int = Field(default=20, alias="TELEGRAM_LONGPOLL_EXTRA_SECONDS")
 
     model_config = SettingsConfigDict(
         env_file=".env",
