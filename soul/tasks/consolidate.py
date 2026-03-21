@@ -280,10 +280,11 @@ def _extract_structured_insights(user_lines: list[str], settings: Settings) -> S
     if not settings.openai_api_key:
         return None
 
+    soul = load_soul(settings.soul_file)
     try:
-        soul = load_soul(settings.soul_file)
         client = LLMClient(settings, soul)
-    except Exception:
+    except Exception as exc:
+        logger.warning("Structured insight client initialization failed: %s", exc, exc_info=True)
         return None
 
     try:

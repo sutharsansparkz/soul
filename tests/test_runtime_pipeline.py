@@ -122,6 +122,23 @@ def test_consolidate_day_merges_structured_insights_when_available(tmp_path, mon
     assert any(item["phrase"] == "tiny rituals" for item in shared_language)
 
 
+def test_extract_structured_insights_propagates_soul_load_failures(tmp_path):
+    from soul.tasks.consolidate import _extract_structured_insights
+
+    settings = Settings(
+        database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
+        soul_data_path=str(tmp_path / "soul_data"),
+        openai_api_key="test-key",
+    )
+
+    try:
+        _extract_structured_insights(["hello"], settings)
+    except FileNotFoundError:
+        pass
+    else:
+        raise AssertionError("Expected load_soul failure to propagate when soul.yaml is missing")
+
+
 def test_chat_voice_mode_uses_recording_when_prompt_is_blank(tmp_path, monkeypatch):
     settings = Settings(
         database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",

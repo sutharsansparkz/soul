@@ -4,6 +4,8 @@ import math
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from soul.config import Settings
+
 
 @dataclass(slots=True)
 class HMSComponents:
@@ -33,12 +35,10 @@ def clamp01(value: float) -> float:
 
 
 def decay_rate_from_halflife(half_life_days: float, *, settings=None) -> float:
-    from soul.config import get_settings
-
-    resolved_settings = settings or get_settings()
+    resolved_hms_ln2 = settings.hms_ln2 if settings is not None else float(Settings.model_fields["hms_ln2"].default)
     if half_life_days <= 0:
         return 1.0
-    return resolved_settings.hms_ln2 / half_life_days
+    return resolved_hms_ln2 / half_life_days
 
 
 def score_temporal(

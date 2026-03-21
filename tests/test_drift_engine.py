@@ -80,6 +80,33 @@ def test_run_drift_task_skips_writes_when_disabled(tmp_path):
     assert db.list_drift_log(database_url) == []
 
 
+def test_derive_resonance_signals_caps_engagement_after_mood_bonus(tmp_path):
+    database_url = f"sqlite:///{(tmp_path / 'soul.db').as_posix()}"
+    db.init_db(database_url)
+    session_id = db.create_session(database_url, "Ara")
+    db.log_message(
+        database_url,
+        session_id=session_id,
+        role="assistant",
+        content="I am here with you and I want to understand what happened.",
+        companion_state="warm",
+    )
+    db.log_message(
+        database_url,
+        session_id=session_id,
+        role="user",
+        content="This was a lot.",
+        user_mood="reflective",
+        companion_state="warm",
+        metadata={"word_count": 100},
+    )
+    db.close_session(database_url, session_id)
+
+    signals = derive_resonance_signals(database_url)
+
+    assert signals["warmth_expression"] == 1.0
+
+
 def test_derive_resonance_signals_ignores_sessions_older_than_30_days(tmp_path):
     database_url = f"sqlite:///{(tmp_path / 'soul.db').as_posix()}"
     db.init_db(database_url)
