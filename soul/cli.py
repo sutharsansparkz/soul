@@ -339,7 +339,12 @@ def _handle_session_command(
     voice_bridge: VoiceBridge,
     episodic_repo: EpisodicMemoryRepository,
 ) -> tuple[bool, bool, bool]:
-    parts = shlex.split(raw_input)
+    try:
+        parts = shlex.split(raw_input)
+    except ValueError as exc:
+        console.print(f"[red]Invalid command syntax:[/red] {exc}")
+        return False, voice_output_enabled, voice_chat_mode
+
     command = parts[0].casefold()
 
     if command == "/quit":

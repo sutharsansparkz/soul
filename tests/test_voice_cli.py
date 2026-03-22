@@ -251,3 +251,30 @@ def test_voice_output_uses_autoplay_flag():
     cli._voice_output(FakeVoiceBridge(), True, "hello")
 
     assert captured == {"text": "hello", "autoplay": True}
+
+
+def test_chat_handles_malformed_quoted_slash_command_without_crashing(tmp_path, monkeypatch):
+    database_url = f"sqlite:///{(tmp_path / 'soul.db').as_posix()}"
+    db.init_db(database_url)
+
+    settings = Settings(
+        database_url=database_url,
+        soul_data_path=str(tmp_path / "soul_data"),
+        redis_url="redis://localhost:6399/0",
+    )
+    soul = Soul(
+        raw={"identity": {"name": "Ara", "voice": "warm", "energy": "steady"}, "character": {}, "ethics": {}, "worldview": {}},
+        name="Ara",
+        voice="warm",
+        energy="steady",
+    )
+    prompts = iter(['/voice "', '/quit'])
+
+    monkeypatch.setattr(cli, "_bootstrap", lambda: (settings, soul))
+    monkeypatch.setattr(cli.Prompt, "ask", lambda *args, **kwargs: next(prompts))
+
+    result = CliRunner().invoke(cli.app, ["chat"])
+
+    assert result.exit_code == 0
+    assert "Invalid command syntax" in result.stdout
+    assert "No closing quotation" in result.stdout
