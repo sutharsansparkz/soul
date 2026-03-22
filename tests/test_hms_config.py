@@ -95,3 +95,19 @@ def test_get_settings_is_not_called_at_module_level():
 
 def test_default_timezone_is_utc():
     assert Settings.model_fields["timezone_name"].default == "UTC"
+
+
+def test_default_database_url_follows_soul_data_dir(tmp_path):
+    settings = Settings(soul_data_path=str(tmp_path / "custom-data"))
+
+    assert settings.database_url == f"sqlite:///{(tmp_path / 'custom-data' / 'db' / 'soul.db').as_posix()}"
+
+
+def test_explicit_database_url_overrides_soul_data_dir(tmp_path):
+    explicit_db = tmp_path / "explicit.db"
+    settings = Settings(
+        soul_data_path=str(tmp_path / "custom-data"),
+        database_url=f"sqlite:///{explicit_db.as_posix()}",
+    )
+
+    assert settings.database_url == f"sqlite:///{explicit_db.as_posix()}"

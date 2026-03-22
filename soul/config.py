@@ -3,7 +3,7 @@ from functools import lru_cache
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     # Leave unset to use the default OpenAI endpoint (https://api.openai.com/v1).
     openai_base_url: str | None = Field(default=None, alias="OPENAI_BASE_URL")
 
-    database_url: str = Field(default="sqlite:///./soul_data/db/soul.db", alias="DATABASE_URL")
+    database_url: str | None = Field(default=None, alias="DATABASE_URL")
     soul_data_path: str = Field(default="./soul_data", alias="SOUL_DATA_DIR")
     redis_url: str = Field(default="redis://localhost:6379", alias="REDIS_URL")
 
@@ -80,6 +80,14 @@ class Settings(BaseSettings):
         extra="ignore",
         populate_by_name=True,
     )
+
+    @model_validator(mode="after")
+    def _default_database_url(self) -> Settings:
+        if self.database_url:
+            return self
+        default_sqlite_path = self.soul_data_dir / "db" / "soul.db"
+        self.database_url = f"sqlite:///{default_sqlite_path.as_posix()}"
+        return self
 
     @property
     def root_dir(self) -> Path:
@@ -150,7 +158,7 @@ class Settings(BaseSettings):
 
     @property
     def sqlite_path(self) -> Path:
-        if not self.database_url.startswith("sqlite:///"):
+        if not self.database_url or not self.database_url.startswith("sqlite:///"):
             raise ValueError("sqlite_path is only available when DATABASE_URL uses sqlite.")
         raw_path = self.database_url.removeprefix("sqlite:///")
         path = Path(raw_path)
@@ -160,7 +168,7 @@ class Settings(BaseSettings):
 
     @property
     def database_is_sqlite(self) -> bool:
-        return self.database_url.startswith("sqlite:///")
+        return bool(self.database_url and self.database_url.startswith("sqlite:///"))
 
     @property
     def redacted_database_url(self) -> str:
