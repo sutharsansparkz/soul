@@ -46,3 +46,17 @@ def test_past_stress_trigger_requires_dated_signal_not_only_story_mood():
 
     triggers = {item.trigger for item in candidates}
     assert "past_stress_3d" not in triggers
+
+
+def test_birthday_trigger_supports_month_day_leap_day_format():
+    today = datetime(2024, 2, 29, 9, 0, tzinfo=timezone.utc)
+    story = UserStory(basics={"birthday": "02-29"})
+
+    candidates = build_reach_out_candidates(
+        days_since_last_chat=0,
+        story=story,
+        today=today,
+    )
+
+    triggers = {item.trigger for item in candidates}
+    assert "birthday" in triggers

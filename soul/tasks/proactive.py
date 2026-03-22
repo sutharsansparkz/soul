@@ -136,11 +136,20 @@ def _parse_month_day(value: str, *, fallback_year: int) -> date | None:
         return datetime.strptime(text, "%Y-%m-%d").date()
     except ValueError:
         pass
+    parts = text.split("-")
+    if len(parts) != 2:
+        return None
     try:
-        parsed = datetime.strptime(text, "%m-%d")
-        return date(fallback_year, parsed.month, parsed.day)
+        month, day = (int(part) for part in parts)
     except ValueError:
         return None
+    try:
+        return date(fallback_year, month, day)
+    except ValueError:
+        try:
+            return date(2000, month, day)
+        except ValueError:
+            return None
 
 
 def _has_stress_signal_three_days_ago(values: list[str], *, today: date) -> bool:
