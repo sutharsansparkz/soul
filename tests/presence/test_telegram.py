@@ -99,6 +99,28 @@ def test_telegram_client_returns_not_ok_when_api_returns_ok_false():
     assert result.error == "telegram_error: Bad Request"
 
 
+def test_telegram_client_get_updates_warns_and_returns_empty_on_api_error():
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return b'{"ok": false, "error_code": 401, "description": "Unauthorized"}'
+
+    def opener(request, timeout=None):  # noqa: ARG001
+        return Response()
+
+    client = TelegramClient(token="abc123", opener=opener)
+
+    with pytest.warns(UserWarning, match="Telegram get_updates failed: Unauthorized"):
+        updates = client.get_updates()
+
+    assert updates == []
+
+
 def test_bot_runner_parses_updates():
     runner = TelegramBotRunner(
         runtime=SimpleNamespace(handle_text=lambda *args, **kwargs: SimpleNamespace(reply_text="hi")),

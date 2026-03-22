@@ -98,7 +98,14 @@ class TelegramClient:
             return []
         finally:
             socket.setdefaulttimeout(previous_timeout)
-        return list(payload.get("result", []))
+
+        if not payload.get("ok"):
+            description = payload.get("description") or payload.get("error_code") or "telegram api error"
+            warnings.warn(f"Telegram get_updates failed: {description}", stacklevel=2)
+            return []
+
+        result = payload.get("result", [])
+        return list(result) if isinstance(result, list) else []
 
     def _post(self, method: str, payload: JsonDict) -> JsonDict:
         request = Request(
