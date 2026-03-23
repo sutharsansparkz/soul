@@ -65,15 +65,17 @@ def build_reach_out_candidates(
     today: datetime | None = None,
     stress_signal_dates: list[str] | None = None,
     milestones_today: list[str] | None = None,
+    settings: Settings | None = None,
 ) -> list[ReachOutCandidate]:
+    resolved_settings = settings or get_settings()
     today = today or datetime.now()
     today_date = today.date()
     candidates: list[ReachOutCandidate] = []
 
-    if days_since_last_chat is not None and days_since_last_chat >= 3:
+    if days_since_last_chat is not None and days_since_last_chat >= resolved_settings.proactive_silence_days:
         candidates.append(
             ReachOutCandidate(
-                trigger="silence_3_days",
+                trigger=f"silence_{resolved_settings.proactive_silence_days}_days",
                 message="It's been a few days. Just checking in. No pressure to perform for me.",
             )
         )
@@ -86,16 +88,23 @@ def build_reach_out_candidates(
             )
         )
 
-    if _has_stress_signal_three_days_ago(stress_signal_dates or [], today=today_date):
+    if _has_stress_signal_days_ago(
+        stress_signal_dates or [],
+        today=today_date,
+        days_ago=resolved_settings.proactive_stress_followup_days,
+    ):
         candidates.append(
             ReachOutCandidate(
-                trigger="past_stress_3d",
-                message="Three days ago sounded heavy. How is that stress sitting with you today?",
+                trigger=f"past_stress_{resolved_settings.proactive_stress_followup_days}d",
+                message=(
+                    f"{resolved_settings.proactive_stress_followup_days} days ago sounded heavy. "
+                    "How is that stress sitting with you today?"
+                ),
             )
         )
 
     if story:
-        upcoming = _nearest_upcoming_event(story, today=today_date)
+        upcoming = _nearest_upcoming_event(story, today=today_date, days_ahead=resolved_settings.proactive_upcoming_event_days)
         if upcoming is not None:
             candidates.append(
                 ReachOutCandidate(
@@ -152,8 +161,8 @@ def _parse_month_day(value: str, *, fallback_year: int) -> date | None:
             return None
 
 
-def _has_stress_signal_three_days_ago(values: list[str], *, today: date) -> bool:
-    target = today - timedelta(days=3)
+def _has_stress_signal_days_ago(values: list[str], *, today: date, days_ago: int) -> bool:
+    target = today - timedelta(days=days_ago)
     for item in values:
         try:
             observed = datetime.fromisoformat(item).date()
@@ -164,7 +173,7 @@ def _has_stress_signal_three_days_ago(values: list[str], *, today: date) -> bool
     return False
 
 
-def _nearest_upcoming_event(story: UserStory, *, today: date) -> dict[str, str] | None:
+def _nearest_upcoming_event(story: UserStory, *, today: date, days_ahead: int) -> dict[str, str] | None:
     events = getattr(story, "upcoming_events", []) or []
     nearest: tuple[date, dict[str, str]] | None = None
     for event in events:
@@ -177,7 +186,7 @@ def _nearest_upcoming_event(story: UserStory, *, today: date) -> dict[str, str] 
         except ValueError:
             continue
         days_until = (event_date - today).days
-        if days_until < 0 or days_until > 7:
+        if days_until < 0 or days_until > days_ahead:
             continue
         normalized = {"date": raw_date, "title": raw_title[:100]}
         if nearest is None or event_date < nearest[0]:
@@ -204,7 +213,13 @@ def dispatch_reach_out_candidates(
 
     delivery_log = load_delivery_log(settings.proactive_delivery_log_file)
     token = settings.telegram_bot_token.get_secret_value() if settings.telegram_bot_token else None
-    telegram = TelegramClient(token)
+    telegram = TelegramClient(
+        token,
+        base_url=settings.telegram_base_url,
+        timeout=settings.telegram_http_timeout,
+        longpoll_extra=settings.telegram_longpoll_extra_seconds,
+        poll_timeout=settings.telegram_poll_timeout,
+    )
     date_key = today.date().isoformat()
     delivered_triggers: list[str] = []
 
@@ -242,6 +257,7 @@ if celery_app is not None:
             today=now,
             stress_signal_dates=presence_context["stress_signal_dates"],
             milestones_today=presence_context["milestones_today"],
+            settings=settings,
         )
         save_reach_out_candidates(settings.reach_out_candidates_file, candidates)
         delivery = dispatch_reach_out_candidates(settings, candidates)

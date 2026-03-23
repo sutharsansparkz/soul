@@ -65,3 +65,20 @@ def test_next_milestone_label_omits_recurring_phrase_placeholder(tmp_path, monke
     label = cli._next_milestone_label(settings, total_messages=100, now=now)
 
     assert label == "relationship timeline is active"
+
+
+def test_next_milestone_label_uses_configured_message_threshold(tmp_path, monkeypatch):
+    settings = Settings(
+        database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
+        soul_data_path=str(tmp_path / "soul_data"),
+        timezone_name="UTC",
+        milestone_message_count=120,
+    )
+    now = datetime(2026, 3, 21, 9, 0, tzinfo=timezone.utc)
+
+    monkeypatch.setattr(cli.db, "list_sessions", lambda database_url, limit=None, completed_only=False: [])
+    monkeypatch.setattr(cli.db, "milestone_exists", lambda database_url, kind: kind != "hundredth_message")
+
+    label = cli._next_milestone_label(settings, total_messages=118, now=now)
+
+    assert label == "120-message milestone (2 away)"

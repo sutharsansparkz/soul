@@ -280,6 +280,10 @@ def _extract_structured_insights(user_lines: list[str], settings: Settings) -> S
     if not settings.openai_api_key:
         return None
 
+    if not settings.soul_file.exists():
+        logger.warning("Structured insight extraction skipped: missing soul file %s", settings.soul_file)
+        return None
+
     soul = load_soul(settings.soul_file)
     try:
         client = LLMClient(settings, soul)

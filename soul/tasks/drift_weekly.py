@@ -61,7 +61,8 @@ def run_drift_task(
     return DriftTaskResult(updated=updated, log_path=str(Path(log_path)))
 
 
-def derive_resonance_signals(database_url: str) -> dict[str, float]:
+def derive_resonance_signals(database_url: str, *, settings=None) -> dict[str, float]:
+    resolved_settings = settings or get_settings()
     totals = {
         "humor_intensity": 0.0,
         "response_length": 0.0,
@@ -71,9 +72,9 @@ def derive_resonance_signals(database_url: str) -> dict[str, float]:
     }
     pair_count = 0
 
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=resolved_settings.drift_signal_lookback_days)).isoformat()
     sessions = [s for s in db.list_sessions(database_url, completed_only=True) if str(s.get("started_at", "")) >= cutoff]
-    for session in sessions[-50:]:
+    for session in sessions[-resolved_settings.drift_signal_session_limit :]:
         messages = db.get_session_messages(database_url, str(session["id"]))
         for index, message in enumerate(messages[:-1]):
             next_message = messages[index + 1]
@@ -88,17 +89,17 @@ def derive_resonance_signals(database_url: str) -> dict[str, float]:
             except Exception:
                 metadata = {}
             user_words = int(metadata.get("word_count") or len(user_text.split()))
-            engagement = min(1.0, user_words / 35.0)
+            engagement = min(1.0, user_words / resolved_settings.drift_signal_engagement_divisor)
             if str(next_message.get("user_mood") or "") in {"reflective", "venting", "celebrating"}:
-                engagement = min(1.0, engagement + 0.15)
+                engagement = min(1.0, engagement + resolved_settings.drift_signal_mood_bonus)
             if engagement <= 0:
                 continue
 
             state = str(message.get("companion_state") or next_message.get("companion_state") or "")
-            if assistant_words >= 35:
+            if assistant_words >= resolved_settings.drift_signal_response_length_min_words:
                 totals["response_length"] += engagement
-            elif user_words >= 20:
-                totals["response_length"] -= 0.1
+            elif user_words >= resolved_settings.drift_signal_user_depth_min_words:
+                totals["response_length"] -= resolved_settings.drift_signal_response_length_penalty
 
             if "?" in assistant_text or state in {"curious", "reflective"}:
                 totals["curiosity_depth"] += engagement
@@ -107,10 +108,16 @@ def derive_resonance_signals(database_url: str) -> dict[str, float]:
             if state == "playful":
                 totals["humor_intensity"] += engagement
 
-            if assistant_words <= 30 and user_words >= 15:
-                totals["directness"] += 0.4 * engagement
-            elif assistant_words >= 60 and user_words <= 8:
-                totals["directness"] -= 0.2
+            if (
+                assistant_words <= resolved_settings.drift_signal_directness_reply_max_words
+                and user_words >= resolved_settings.drift_signal_directness_user_min_words
+            ):
+                totals["directness"] += resolved_settings.drift_signal_directness_bonus * engagement
+            elif (
+                assistant_words >= resolved_settings.drift_signal_long_reply_min_words
+                and user_words <= resolved_settings.drift_signal_directness_user_min_words // 2
+            ):
+                totals["directness"] -= resolved_settings.drift_signal_directness_penalty
 
             pair_count += 1
 
@@ -132,6 +139,6 @@ if celery_app is not None:
         if not settings.drift_enabled:
             current = json.loads(settings.personality_file.read_text(encoding="utf-8")) if settings.personality_file.exists() else {}
             return {"updated": merge_with_baseline(current), "log_path": str(settings.drift_log_file), "skipped": True}
-        signals = derive_resonance_signals(settings.database_url)
+        signals = derive_resonance_signals(settings.database_url, settings=settings)
         result = run_drift_task(settings.personality_file, settings.drift_log_file, signals, settings=settings)
         return {"updated": result.updated, "log_path": result.log_path, "skipped": False}

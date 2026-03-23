@@ -60,12 +60,14 @@ def build_presence_context(
     stress_events = db.list_user_message_moods_since(
         database_url,
         moods=("stressed", "overwhelmed", "venting"),
-        since=(now_utc.replace(microsecond=0) - timedelta(days=14)).isoformat(),
+        since=(
+            now_utc.replace(microsecond=0) - timedelta(days=settings.presence_stress_window_days)
+        ).isoformat(),
     )
     stress_signal_dates = [str(item["created_at"]) for item in stress_events]
 
     milestones_today: list[str] = []
-    for milestone in db.list_milestones(database_url, limit=200):
+    for milestone in db.list_milestones(database_url, limit=settings.presence_milestone_scan_limit):
         occurred_at = str(milestone.get("occurred_at", ""))
         try:
             occurred = _parse_runtime_timestamp(occurred_at, settings=settings)

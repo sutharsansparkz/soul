@@ -71,7 +71,7 @@ class VoiceBridge:
         except Exception:
             return False
 
-    def transcribe(self, audio_path: str | Path, *, model: str = "base") -> VoiceTranscriptionResult:
+    def transcribe(self, audio_path: str | Path, *, model: str | None = None) -> VoiceTranscriptionResult:
         path = Path(audio_path)
         if not path.exists():
             return VoiceTranscriptionResult(ok=False, text=None, backend="whisper", error=f"missing file: {path}")
@@ -82,7 +82,7 @@ class VoiceBridge:
             return VoiceTranscriptionResult(ok=False, text=None, backend="whisper", error=f"whisper unavailable: {exc}")
 
         try:
-            model_obj = whisper.load_model(model)
+            model_obj = whisper.load_model(model or self.settings.voice_transcription_model)
             transcript = model_obj.transcribe(str(path))
             text = transcript.get("text", "").strip()
             return VoiceTranscriptionResult(ok=bool(text), text=text or None, backend="whisper")
@@ -157,7 +157,10 @@ class VoiceBridge:
         payload = json.dumps(
             {
                 "text": text,
-                "voice_settings": {"stability": 0.5, "similarity_boost": 0.5},
+                "voice_settings": {
+                    "stability": self.settings.elevenlabs_voice_stability,
+                    "similarity_boost": self.settings.elevenlabs_voice_similarity_boost,
+                },
             },
             ensure_ascii=True,
         ).encode("utf-8")
@@ -243,7 +246,7 @@ class VoiceBridge:
 
     def _run_player(self, command: list[str], *, backend: str) -> VoicePlaybackResult:
         try:
-            completed = subprocess.run(command, timeout=60, capture_output=True)
+            completed = subprocess.run(command, timeout=self.settings.voice_playback_timeout, capture_output=True)
         except FileNotFoundError:
             return VoicePlaybackResult(ok=False, backend=backend, error=f"{backend} not installed")
         except subprocess.TimeoutExpired as exc:

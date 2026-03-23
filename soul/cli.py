@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -11,7 +12,6 @@ from pathlib import Path
 import typer
 from rich import box
 from rich.console import Console
-from rich.live import Live
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
@@ -133,6 +133,12 @@ def _format_countdown(count: int, singular: str, plural: str | None = None) -> s
     return f"{count} {unit} away"
 
 
+def _message_milestone_label(count: int) -> str:
+    if count == 100:
+        return "100th message"
+    return f"{count}-message milestone"
+
+
 def _bootstrap() -> tuple[Settings, Soul]:
     settings = get_settings()
     _ensure_runtime_files(settings)
@@ -205,24 +211,54 @@ def _render_live_reply(
     messages: list[dict[str, str]],
     mood: MoodSnapshot,
 ) -> LLMResult:
-    live_text = Text("", style="white")
-    panel = Panel(live_text, box=box.SIMPLE, border_style="cyan", title=speaker_name)
+    emitted_chunks = False
 
     def handle_chunk(chunk: str) -> None:
+        nonlocal emitted_chunks
         if not chunk:
             return
-        live_text.append(chunk)
-        live.update(Panel(live_text, box=box.SIMPLE, border_style="cyan", title=speaker_name))
+        emitted_chunks = True
+        console.print(Text(chunk, style="white"), end="", soft_wrap=True)
+        console.file.flush()
 
-    with Live(panel, console=console, refresh_per_second=25, transient=True) as live:
-        result = client.reply(
-            system_prompt=system_prompt,
-            messages=messages,
-            mood=mood,
-            stream_handler=handle_chunk,
-        )
-    console.print(f"[bold magenta]{speaker_name}[/bold magenta] > {result.text}")
+    console.print(f"[bold magenta]{speaker_name}[/bold magenta] > ", end="")
+    result = client.reply(
+        system_prompt=system_prompt,
+        messages=messages,
+        mood=mood,
+        stream_handler=handle_chunk,
+    )
+    if not emitted_chunks and result.text:
+        console.print(Text(result.text, style="white"), end="", soft_wrap=True)
+    console.print()
     return result
+
+
+def _render_static_reply(
+    *,
+    speaker_name: str,
+    text: str,
+    provider: str,
+    model: str,
+) -> LLMResult:
+    console.print(f"[bold magenta]{speaker_name}[/bold magenta] > {text}")
+    return LLMResult(text=text, provider=provider, model=model, fallback_used=False)
+
+
+def _print_turn_trace(soul: Soul, mood: MoodSnapshot, bundle: object) -> None:
+    messages = getattr(bundle, "messages", [])
+    story_summary = getattr(bundle, "story_summary", None)
+    memory_snippets = getattr(bundle, "memory_snippets", []) or []
+    history_count = max(0, len(messages) - 1)
+    story_state = "loaded" if story_summary else "empty"
+    memory_count = len(memory_snippets)
+
+    console.print(
+        f"[dim]inside {soul.name}[/dim] "
+        f"[magenta]{mood.companion_state}[/magenta] "
+        f"[dim](user: {mood.user_mood}, history: {history_count}, story: {story_state}, memories: {memory_count})[/dim]"
+    )
+    console.print(f"[dim]{soul.name} is thinking through the reply...[/dim]")
 
 
 def _show_last_session(settings: Settings) -> None:
@@ -260,6 +296,7 @@ def _refresh_reach_out_candidates(settings: Settings) -> None:
             today=now,
             stress_signal_dates=presence_context["stress_signal_dates"],
             milestones_today=presence_context["milestones_today"],
+            settings=settings,
         )
         save_reach_out_candidates(settings.reach_out_candidates_file, candidates)
     except Exception:
@@ -275,7 +312,7 @@ def _show_pending_reach_outs(settings: Settings, soul: Soul) -> None:
     if not candidates:
         return
 
-    for candidate in candidates[:1]:
+    for candidate in candidates[: settings.chat_pending_reach_out_limit]:
         console.print()
         console.print(
             Panel(
@@ -326,6 +363,59 @@ def _capture_voice_input(voice_bridge: VoiceBridge, *, seconds: int) -> str | No
 
     console.print(f"[dim]recorded and transcribed voice input from {recording.output_path}[/dim]")
     return _normalize_voice_transcript(transcript.text)
+
+
+def _match_local_runtime_query(text: str) -> str | None:
+    normalized = re.sub(r"\s+", " ", text.casefold().strip())
+    clock_patterns = (
+        r"\bwhat time is it\b",
+        r"\bwhat(?:'s| is)? the time\b",
+        r"\btime now\b",
+        r"\bcurrent time\b",
+        r"\btell me the time\b",
+        r"\bwhat(?:'s| is)? the date\b",
+        r"\bwhat(?:'s| is)? today(?:'s)? date\b",
+        r"\bdate today\b",
+        r"\bwhat day is (?:it|today)\b",
+    )
+    if any(re.search(pattern, normalized) for pattern in clock_patterns):
+        return "clock"
+    return None
+
+
+def _local_runtime_mood(query_kind: str) -> MoodSnapshot:
+    return MoodSnapshot(
+        user_mood="curious",
+        companion_state="curious",
+        confidence=1.0,
+        rationale=f"local runtime {query_kind} query",
+    )
+
+
+def _local_runtime_reply(settings: Settings, *, speaker_name: str, query_kind: str) -> LLMResult:
+    local_now = runtime_now(settings)
+    timezone_label = getattr(local_now.tzinfo, "key", None) or local_now.tzname() or settings.timezone_name
+    clock_label = local_now.strftime("%I:%M %p").lstrip("0")
+    date_label = local_now.strftime("%A, %B %d, %Y")
+    if query_kind == "clock":
+        text = f"It's {clock_label} on {date_label} ({timezone_label})."
+    else:
+        text = f"It's {clock_label} on {date_label} ({timezone_label})."
+    return _render_static_reply(
+        speaker_name=speaker_name,
+        text=text,
+        provider="local-runtime",
+        model=f"runtime-{query_kind}",
+    )
+
+
+def _print_local_runtime_trace(soul: Soul, mood: MoodSnapshot, *, query_kind: str) -> None:
+    console.print(
+        f"[dim]inside {soul.name}[/dim] "
+        f"[magenta]{mood.companion_state}[/magenta] "
+        f"[dim](user: {mood.user_mood}, local: {query_kind})[/dim]"
+    )
+    console.print(f"[dim]{soul.name} is checking the local {query_kind}...[/dim]")
 
 
 def _handle_session_command(
@@ -509,12 +599,24 @@ def chat(
                     break
                 continue
 
-            current_mood = mood_engine.analyze(user_input, user_id=settings.user_id)
+            runtime_query = _match_local_runtime_query(user_input)
+            if runtime_query is not None:
+                current_mood = _local_runtime_mood(runtime_query)
+            else:
+                current_mood = mood_engine.analyze(user_input, user_id=settings.user_id)
             console.print(
                 f"[dim]{soul.name} mood[/dim] "
                 f"[magenta]{current_mood.companion_state}[/magenta] "
                 f"[dim](user: {current_mood.user_mood})[/dim]"
             )
+            user_metadata: dict[str, object] = {
+                "confidence": current_mood.confidence,
+                "rationale": current_mood.rationale,
+                "word_count": len(user_input.split()),
+            }
+            if runtime_query is not None:
+                user_metadata["local_action"] = runtime_query
+                user_metadata["skip_memory"] = True
             db.log_message(
                 settings.database_url,
                 session_id=session_id,
@@ -523,23 +625,31 @@ def chat(
                 user_mood=current_mood.user_mood,
                 companion_state=current_mood.companion_state,
                 provider="local",
-                metadata={
-                    "confidence": current_mood.confidence,
-                    "rationale": current_mood.rationale,
-                    "word_count": len(user_input.split()),
-                },
+                metadata=user_metadata,
             )
 
-            bundle = builder.build(session_id=session_id, user_input=user_input, mood=current_mood)
-            result = _render_live_reply(
-                client,
-                speaker_name=soul.name,
-                system_prompt=bundle.system_prompt,
-                messages=bundle.messages,
-                mood=current_mood,
-            )
+            if runtime_query is not None:
+                _print_local_runtime_trace(soul, current_mood, query_kind=runtime_query)
+                result = _local_runtime_reply(settings, speaker_name=soul.name, query_kind=runtime_query)
+            else:
+                bundle = builder.build(session_id=session_id, user_input=user_input, mood=current_mood)
+                _print_turn_trace(soul, current_mood, bundle)
+                result = _render_live_reply(
+                    client,
+                    speaker_name=soul.name,
+                    system_prompt=bundle.system_prompt,
+                    messages=bundle.messages,
+                    mood=current_mood,
+                )
             _voice_output(voice_bridge, voice_output_enabled, result.text)
 
+            assistant_metadata: dict[str, object] = {
+                "model": result.model,
+                "fallback_used": result.fallback_used,
+                "error": result.error,
+            }
+            if runtime_query is not None:
+                assistant_metadata["local_action"] = runtime_query
             db.log_message(
                 settings.database_url,
                 session_id=session_id,
@@ -548,21 +658,16 @@ def chat(
                 user_mood=current_mood.user_mood,
                 companion_state=current_mood.companion_state,
                 provider=result.provider,
-                metadata={
-                    "model": result.model,
-                    "fallback_used": result.fallback_used,
-                    "error": result.error,
-                },
+                metadata=assistant_metadata,
             )
-            post_processor.process_turn(
-                session_id=session_id,
-                user_text=user_input,
-                assistant_text=result.text,
-                mood=current_mood,
-            )
-            console.print(
-                f"[dim]── {soul.name}: {current_mood.companion_state}  ·  you: {current_mood.user_mood} ──[/dim]"
-            )
+            if runtime_query is None:
+                post_processor.process_turn(
+                    session_id=session_id,
+                    user_text=user_input,
+                    assistant_text=result.text,
+                    mood=current_mood,
+                )
+            console.print(f"[dim]-- {soul.name}: {current_mood.companion_state} | you: {current_mood.user_mood} --[/dim]")
     finally:
         db.close_session(settings.database_url, session_id)
         post_processor.process_session_end(session_id=session_id)
@@ -768,7 +873,7 @@ def _record_tier(record) -> str:
 
 def _score_bar(score: float, width: int = 12) -> str:
     filled = int(max(0, min(width, round(score * width))))
-    return ("█" * filled) + ("░" * (width - filled))
+    return ("█" * filled) + ("." * (width - filled))
 
 
 def _record_retrieval_rank(record, *, query: str) -> float:
@@ -888,6 +993,7 @@ def status() -> None:
         today=now,
         stress_signal_dates=presence_context["stress_signal_dates"],
         milestones_today=presence_context["milestones_today"],
+        settings=settings,
     )
 
     current_state = mood_engine.current_state(settings.user_id) or {}
@@ -931,7 +1037,7 @@ def run_jobs() -> None:
         archive_dir=settings.session_archive_dir,
         retention_days=settings.raw_retention_days,
     )
-    resonance_signals = derive_resonance_signals(settings.database_url)
+    resonance_signals = derive_resonance_signals(settings.database_url, settings=settings)
     drift_result = run_drift_task(
         personality_path=settings.personality_file,
         log_path=settings.drift_log_file,
@@ -947,6 +1053,7 @@ def run_jobs() -> None:
         today=now,
         stress_signal_dates=presence_context["stress_signal_dates"],
         milestones_today=presence_context["milestones_today"],
+        settings=settings,
     )
     save_reach_out_candidates(settings.reach_out_candidates_file, candidates)
     delivery = dispatch_reach_out_candidates(settings, candidates)
@@ -1053,24 +1160,34 @@ def _next_milestone_label(settings: Settings, total_messages: int, *, now: datet
     now = now or runtime_now(settings)
     candidates: list[tuple[int, str, str]] = []
 
-    if total_messages < 100 and not db.milestone_exists(settings.database_url, "hundredth_message"):
-        remaining = max(0, 100 - total_messages)
-        candidates.append((3 if remaining > 0 else 0, "hundredth_message", f"100th message ({remaining} away)"))
+    if total_messages < settings.milestone_message_count and not db.milestone_exists(settings.database_url, "hundredth_message"):
+        remaining = max(0, settings.milestone_message_count - total_messages)
+        candidates.append(
+            (
+                3 if remaining > 0 else 0,
+                "hundredth_message",
+                f"{_message_milestone_label(settings.milestone_message_count)} ({remaining} away)",
+            )
+        )
 
     if not db.milestone_exists(settings.database_url, "seven_day_streak"):
         streak = _conversation_streak_progress(settings, now=now)
-        remaining = max(0, 7 - streak) if streak else 7
-        label = "7-day conversation streak (today)" if remaining == 0 else f"7-day conversation streak ({_format_countdown(remaining, 'day')})"
+        remaining = max(0, settings.milestone_streak_days - streak) if streak else settings.milestone_streak_days
+        label = (
+            f"{settings.milestone_streak_days}-day conversation streak (today)"
+            if remaining == 0
+            else f"{settings.milestone_streak_days}-day conversation streak ({_format_countdown(remaining, 'day')})"
+        )
         candidates.append((remaining, "seven_day_streak", label))
 
     if not db.milestone_exists(settings.database_url, "one_month_anniversary"):
-        remaining = _anniversary_progress(settings, days=30, now=now)
+        remaining = _anniversary_progress(settings, days=settings.milestone_one_month_days, now=now)
         if remaining is not None:
             label = "1-month anniversary (today)" if remaining == 0 else f"1-month anniversary ({_format_countdown(remaining, 'day')})"
             candidates.append((remaining, "one_month_anniversary", label))
 
     if not db.milestone_exists(settings.database_url, "three_month_anniversary"):
-        remaining = _anniversary_progress(settings, days=90, now=now)
+        remaining = _anniversary_progress(settings, days=settings.milestone_three_month_days, now=now)
         if remaining is not None:
             label = "3-month anniversary (today)" if remaining == 0 else f"3-month anniversary ({_format_countdown(remaining, 'day')})"
             candidates.append((remaining, "three_month_anniversary", label))

@@ -5,6 +5,7 @@ SOUL is a terminal-first AI companion with a fixed identity, emotional context, 
 This repository now contains a fuller local-to-production runtime:
 
 - `soul chat` starts a REPL session.
+- `soul chat` now shows a compact turn trace before each reply so you can see the current mood/context pipeline, and assistant output streams directly into the terminal instead of waiting for a final pasted block.
 - `soul chat --voice` now supports a mic-first loop: press Enter to record a turn, or type normally if you prefer. `soul chat --voice --record-seconds 5` seeds the first turn from the microphone, and `soul chat --voice-input path.wav --voice` supports file transcription plus synthesized replies when voice credentials are configured.
 - `soul db init` initializes local storage.
 - `soul memories`, `soul story`, `soul drift`, `soul milestones`, and `soul status` expose the persistence layer.

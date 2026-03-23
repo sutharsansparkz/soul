@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 
 from soul import db
@@ -30,11 +31,14 @@ class PostProcessor:
             recurring_phrases=recurring_phrases,
         )
 
-        if mood.user_mood in {"venting", "reflective", "celebrating", "stressed", "overwhelmed"} and len(user_text.split()) >= 8:
+        if (
+            mood.user_mood in set(self.settings.auto_memory_capture_moods)
+            and len(user_text.split()) >= self.settings.auto_memory_min_words
+        ):
             self.episodic_repo.add_text(
                 user_text,
                 emotional_tag=mood.user_mood,
-                importance=0.65,
+                importance=self.settings.auto_memory_importance,
                 memory_type="moment",
                 metadata={
                     "session_id": session_id,
@@ -47,13 +51,19 @@ class PostProcessor:
                 session_id=session_id,
                 label=f"{mood.user_mood} moment",
                 content=user_text,
-                importance=0.65,
+                importance=self.settings.auto_memory_importance,
                 source="auto",
             )
 
     def process_session_end(self, *, session_id: str) -> None:
         rows = db.get_session_messages(self.settings.database_url, session_id)
-        user_rows = [row for row in rows if str(row.get("role", "")).casefold() == "user" and str(row.get("content", "")).strip()]
+        user_rows = [
+            row
+            for row in rows
+            if str(row.get("role", "")).casefold() == "user"
+            and str(row.get("content", "")).strip()
+            and self._should_export_user_row(row)
+        ]
         export_state = db.get_session_memory_export_state(self.settings.database_url, session_id) or {}
         exported_user_count = int(export_state.get("exported_user_count") or 0)
         if not user_rows:
@@ -69,13 +79,23 @@ class PostProcessor:
         if fresh_count != exported_user_count:
             return
 
-        for chunk in self._chunk_rows(pending_user_rows, size=3):
+        for chunk in self._chunk_rows(pending_user_rows, size=self.settings.session_memory_chunk_size):
             content = " ".join(str(row["content"]).strip() for row in chunk if str(row.get("content", "")).strip()).strip()
             if not content:
                 continue
             timestamp = str(chunk[-1].get("created_at") or db.utcnow_iso())
             dominant_mood = self._dominant_user_mood(chunk)
-            importance = min(0.85, round(0.55 + min(0.2, len(content.split()) / 200), 2))
+            importance = min(
+                self.settings.session_memory_max_importance,
+                round(
+                    self.settings.session_memory_base_importance
+                    + min(
+                        self.settings.session_memory_word_importance_cap,
+                        len(content.split()) / self.settings.session_memory_word_importance_divisor,
+                    ),
+                    2,
+                ),
+            )
             self.episodic_repo.add_text(
                 content,
                 emotional_tag=dominant_mood,
@@ -123,21 +143,22 @@ class PostProcessor:
                 category="relationship",
             )
 
-        if db.count_messages(self.settings.database_url, role="user") >= 100 and not db.milestone_exists(
+        if db.count_messages(self.settings.database_url, role="user") >= self.settings.milestone_message_count and not db.milestone_exists(
             self.settings.database_url, "hundredth_message"
         ):
+            threshold_label = self._message_milestone_label(self.settings.milestone_message_count)
             self._record_db_milestone(
                 kind="hundredth_message",
-                note="Reached 100 user messages.",
+                note=f"Reached {self.settings.milestone_message_count} user messages.",
                 session_id=session_id,
-                title="100th message",
-                description="Reached 100 user messages.",
+                title=threshold_label,
+                description=f"Reached {self.settings.milestone_message_count} user messages.",
                 category="relationship",
             )
 
         vulnerable = mood.user_mood in {"venting", "overwhelmed", "stressed"} or any(
             phrase in user_text.casefold()
-            for phrase in ("i'm scared", "i am scared", "i feel invisible", "i feel alone", "i feel broken")
+            for phrase in self.settings.vulnerability_trigger_phrases
         )
         if vulnerable and not db.milestone_exists(self.settings.database_url, "first_vulnerable_share"):
             self._record_db_milestone(
@@ -160,17 +181,21 @@ class PostProcessor:
                 category="memory",
             )
 
-        if self._has_conversation_streak(7) and not db.milestone_exists(self.settings.database_url, "seven_day_streak"):
+        if self._has_conversation_streak(self.settings.milestone_streak_days) and not db.milestone_exists(
+            self.settings.database_url, "seven_day_streak"
+        ):
             self._record_db_milestone(
                 kind="seven_day_streak",
-                note="Reached a 7-day conversation streak.",
+                note=f"Reached a {self.settings.milestone_streak_days}-day conversation streak.",
                 session_id=session_id,
-                title="7-day conversation streak",
-                description="The conversation has continued for seven consecutive days.",
+                title=f"{self.settings.milestone_streak_days}-day conversation streak",
+                description=f"The conversation has continued for {self.settings.milestone_streak_days} consecutive days.",
                 category="relationship",
             )
 
-        if self._has_anniversary(days=30) and not db.milestone_exists(self.settings.database_url, "one_month_anniversary"):
+        if self._has_anniversary(days=self.settings.milestone_one_month_days) and not db.milestone_exists(
+            self.settings.database_url, "one_month_anniversary"
+        ):
             self._record_db_milestone(
                 kind="one_month_anniversary",
                 note="Reached the 1-month anniversary.",
@@ -180,7 +205,9 @@ class PostProcessor:
                 category="relationship",
             )
 
-        if self._has_anniversary(days=90) and not db.milestone_exists(self.settings.database_url, "three_month_anniversary"):
+        if self._has_anniversary(days=self.settings.milestone_three_month_days) and not db.milestone_exists(
+            self.settings.database_url, "three_month_anniversary"
+        ):
             self._record_db_milestone(
                 kind="three_month_anniversary",
                 note="Reached the 3-month anniversary.",
@@ -218,16 +245,10 @@ class PostProcessor:
     def _update_shared_language(self, user_text: str) -> list[str]:
         lowered = user_text.casefold()
         recurring: list[str] = []
-        if "as always" in lowered:
-            entry = self.shared_language.register("as always", "recurring reassurance")
-            if entry.count == 2:
-                recurring.append(entry.phrase)
-        if "late night coding" in lowered:
-            entry = self.shared_language.register("late night coding", "favorite ritual")
-            if entry.count == 2:
-                recurring.append(entry.phrase)
-        if "rough day" in lowered:
-            entry = self.shared_language.register("rough day", "shared shorthand for a hard day")
+        for phrase, meaning in self.settings.shared_language_triggers.items():
+            if phrase not in lowered:
+                continue
+            entry = self.shared_language.register(phrase, meaning)
             if entry.count == 2:
                 recurring.append(entry.phrase)
         return recurring
@@ -295,6 +316,11 @@ class PostProcessor:
             slug = slug.replace("__", "_")
         return slug.strip("_") or "event"
 
+    def _message_milestone_label(self, count: int) -> str:
+        if count == 100:
+            return "100th message"
+        return f"{count}-message milestone"
+
     def _chunk_rows(self, rows: list[dict[str, object]], *, size: int) -> list[list[dict[str, object]]]:
         chunks: list[list[dict[str, object]]] = []
         for index in range(0, len(rows), size):
@@ -313,3 +339,15 @@ class PostProcessor:
         if not counts:
             return None
         return max(counts.items(), key=lambda item: item[1])[0]
+
+    def _should_export_user_row(self, row: dict[str, object]) -> bool:
+        raw_metadata = row.get("metadata_json")
+        if not raw_metadata:
+            return True
+        try:
+            payload = raw_metadata if isinstance(raw_metadata, dict) else json.loads(str(raw_metadata))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return True
+        if not isinstance(payload, dict):
+            return True
+        return not bool(payload.get("skip_memory"))

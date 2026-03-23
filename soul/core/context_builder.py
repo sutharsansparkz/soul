@@ -28,7 +28,11 @@ class ContextBuilder:
         self.episodic_repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
 
     def build(self, *, session_id: str, user_input: str, mood: MoodSnapshot) -> ContextBundle:
-        recent_messages = db.get_recent_session_messages(self.settings.database_url, session_id, limit=12)
+        recent_messages = db.get_recent_session_messages(
+            self.settings.database_url,
+            session_id,
+            limit=self.settings.context_history_limit,
+        )
         story_summary = self._story_summary()
         personality_hint = self._personality_context()
         memory_snippets = self._memory_context(user_input)
@@ -100,8 +104,8 @@ class ContextBuilder:
             "directness": ("gentle and indirect", "blunt and plain-spoken"),
             "warmth_expression": ("reserved and contained", "openly warm and affectionate"),
         }
-        baseline = 0.5
-        threshold = 0.04
+        baseline = self.settings.personality_drift_baseline
+        threshold = self.settings.personality_drift_render_threshold
 
         lines: list[str] = []
         for dim, value in dims.items():

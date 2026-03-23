@@ -54,3 +54,6 @@ include = ["soul*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+  "live_llm: exercises the real configured LLM provider and requires network access",
+]

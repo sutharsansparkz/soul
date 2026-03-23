@@ -79,6 +79,42 @@ def test_voice_bridge_speak_rejects_empty_response(tmp_path):
     assert not output_path.exists()
 
 
+def test_voice_bridge_speak_uses_configured_voice_settings(tmp_path):
+    captured = {}
+
+    class AudioResponse:
+        headers = {"Content-Type": "audio/mpeg"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):  # noqa: ANN001
+            return False
+
+        def read(self):
+            return b"audio"
+
+    def opener(request, timeout=None):  # noqa: ARG001
+        captured["payload"] = request.data.decode("utf-8")
+        return AudioResponse()
+
+    settings = Settings(
+        database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
+        soul_data_path=str(tmp_path / "soul_data"),
+        elevenlabs_api_key="fake-key",
+        elevenlabs_voice_id="fake-voice",
+        elevenlabs_voice_stability=0.7,
+        elevenlabs_voice_similarity_boost=0.3,
+    )
+    bridge = VoiceBridge(settings, opener=opener)
+
+    result = bridge.speak("hello", output_path=tmp_path / "latest.mp3")
+
+    assert result.ok is True
+    assert '"stability": 0.7' in captured["payload"]
+    assert '"similarity_boost": 0.3' in captured["payload"]
+
+
 def test_voice_bridge_speak_rejects_html_response(tmp_path):
     class HtmlResponse:
         headers = {"Content-Type": "text/html"}

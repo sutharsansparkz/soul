@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import json
 from pathlib import Path
 
 from soul.config import Settings
@@ -47,20 +48,28 @@ def test_hms_config_knobs_are_exposed():
         hybrid_embeddings=True,
         hybrid_model="all-MiniLM-L6-v2",
         llm_max_tokens=1200,
+        llm_temperature=0.2,
+        context_history_limit=16,
         memory_candidate_k=25,
         hms_semantic_weight=0.6,
         hms_score_weight=0.4,
         hms_decay_halflife_days=45,
         hms_cold_threshold=0.07,
+        milestone_message_count=120,
+        proactive_silence_days=5,
     )
     assert settings.hybrid_embeddings is True
     assert settings.hybrid_model == "all-MiniLM-L6-v2"
     assert settings.llm_max_tokens == 1200
+    assert settings.llm_temperature == 0.2
+    assert settings.context_history_limit == 16
     assert settings.memory_candidate_k == 25
     assert settings.hms_semantic_weight == 0.6
     assert settings.hms_score_weight == 0.4
     assert settings.hms_decay_halflife_days == 45
     assert settings.hms_cold_threshold == 0.07
+    assert settings.milestone_message_count == 120
+    assert settings.proactive_silence_days == 5
 
 
 def test_connection_urls_are_redacted_for_cli_output():
@@ -77,6 +86,22 @@ def test_connection_urls_are_redacted_for_cli_output():
     assert payload["redis_url"] == settings.redacted_redis_url
     assert "db-secret" not in str(payload["database_url"])
     assert "redis-secret" not in str(payload["redis_url"])
+
+
+def test_empty_secret_values_are_safe_for_config_json_output():
+    settings = Settings(
+        openai_api_key="",
+        elevenlabs_api_key="",
+        telegram_bot_token="",
+    )
+
+    payload = settings.as_redacted_dict()
+    serialized = json.dumps(payload)
+
+    assert payload["openai_api_key"] == ""
+    assert payload["elevenlabs_api_key"] == ""
+    assert payload["telegram_bot_token"] == ""
+    assert "SecretStr" not in serialized
 
 
 def test_get_settings_is_not_called_at_module_level():
@@ -98,7 +123,7 @@ def test_default_timezone_is_utc():
 
 
 def test_default_database_url_follows_soul_data_dir(tmp_path):
-    settings = Settings(soul_data_path=str(tmp_path / "custom-data"))
+    settings = Settings(soul_data_path=str(tmp_path / "custom-data"), _env_file=None)
 
     assert settings.database_url == f"sqlite:///{(tmp_path / 'custom-data' / 'db' / 'soul.db').as_posix()}"
 
@@ -108,6 +133,7 @@ def test_explicit_database_url_overrides_soul_data_dir(tmp_path):
     settings = Settings(
         soul_data_path=str(tmp_path / "custom-data"),
         database_url=f"sqlite:///{explicit_db.as_posix()}",
+        _env_file=None,
     )
 
     assert settings.database_url == f"sqlite:///{explicit_db.as_posix()}"

@@ -89,7 +89,14 @@ class MoodEngine:
             temperature=self.settings.mood_openai_temperature,
         )
         raw = (response.choices[0].message.content or "").strip()
-        payload = json.loads(raw)
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            start = raw.find("{")
+            end = raw.rfind("}") + 1
+            if start < 0 or end <= start:
+                raise
+            payload = json.loads(raw[start:end])
         mood = str(payload.get("mood", "")).casefold()
 
         if mood not in self.STATE_MAP:
@@ -102,7 +109,7 @@ class MoodEngine:
         return mood, confidence, f"openai mood prompt (model={self.settings.mood_openai_model})"
 
     def _should_preserve_previous_state(self, text: str) -> bool:
-        return len(text.split()) <= 4
+        return len(text.split()) <= self.settings.mood_preserve_previous_max_words
 
     def current_state(self, user_id: str | None = None) -> dict[str, Any] | None:
         user_id = user_id or self.settings.user_id

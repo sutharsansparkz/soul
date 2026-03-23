@@ -1,16 +1,29 @@
+# Local environment
 .env
 .venv/
+
+# Python caches and tooling
 __pycache__/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+htmlcov/
+build/
+dist/
 *.pyc
+*.pyo
+*.pyd
+*.egg-info/
+
+# Runtime state - generated locally, never committed
 soul_data/db/*.db
 soul_data/db/*.sqlite
 soul_data/db/latest_session.log
 soul_data/chroma/
 soul_data/episodic_memory.jsonl
 soul_data/personality.json
-
-# Runtime state - generated at runtime, never committed
 soul_data/user_story.json
 soul_data/milestones.json
 soul_data/drift_log.json
@@ -21,4 +34,7 @@ soul_data/reach_out_candidates.json
 soul_data/proactive_delivery_log.json
 soul_data/logs/
 soul_data/voice/
+
+# Local test and integration scratch space
 tmp_integration_check/
+tmp_cli_direct_test_*/

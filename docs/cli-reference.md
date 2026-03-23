@@ -3,6 +3,7 @@
 ## Core
 
 - `soul chat`
+- `soul chat` shows a compact per-turn trace (`inside <name> ...`) before the reply and streams the assistant response token-by-token in the terminal
 - `soul chat --voice`
 - `soul chat --voice-input "path.wav"`
 - `soul chat --record-seconds 5`

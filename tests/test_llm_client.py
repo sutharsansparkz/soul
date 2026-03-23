@@ -22,6 +22,7 @@ def test_llm_client_reply_uses_configured_max_tokens(tmp_path):
         database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
         soul_data_path=str(tmp_path / "soul_data"),
         llm_max_tokens=123,
+        llm_temperature=0.25,
     )
     client = LLMClient(settings, _soul())
     captured: dict[str, object] = {}
@@ -45,4 +46,5 @@ def test_llm_client_reply_uses_configured_max_tokens(tmp_path):
     )
 
     assert captured["max_tokens"] == 123
+    assert captured["temperature"] == 0.25
     assert result.text == "hello"

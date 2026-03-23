@@ -41,16 +41,24 @@ class TelegramClient:
         self,
         token: str | None = None,
         *,
-        base_url: str = "https://api.telegram.org",
+        base_url: str | None = None,
         opener: Callable[..., object] | None = None,
-        timeout: int = 15,
-        longpoll_extra: int = 20,
+        timeout: int | None = None,
+        longpoll_extra: int | None = None,
+        poll_timeout: int | None = None,
     ) -> None:
         self.token = token or ""
-        self.base_url = base_url.rstrip("/")
+        self.base_url = (base_url or Settings.model_fields["telegram_base_url"].default).rstrip("/")
         self._open = opener or urlopen
-        self._timeout = timeout
-        self._longpoll_extra = longpoll_extra
+        self._timeout = timeout if timeout is not None else Settings.model_fields["telegram_http_timeout"].default
+        self._longpoll_extra = (
+            longpoll_extra
+            if longpoll_extra is not None
+            else Settings.model_fields["telegram_longpoll_extra_seconds"].default
+        )
+        self._poll_timeout = (
+            poll_timeout if poll_timeout is not None else Settings.model_fields["telegram_poll_timeout"].default
+        )
 
     @property
     def enabled(self) -> bool:
@@ -79,15 +87,16 @@ class TelegramClient:
         except Exception as exc:
             return TelegramSendResult(ok=False, chat_id=chat_id, message=text, error=f"unexpected: {exc}")
 
-    def get_updates(self, *, offset: int | None = None, timeout: int = 10) -> list[JsonDict]:
+    def get_updates(self, *, offset: int | None = None, timeout: int | None = None) -> list[JsonDict]:
         if not self.enabled:
             return []
 
-        params: dict[str, object] = {"timeout": timeout}
+        request_timeout = timeout if timeout is not None else self._poll_timeout
+        params: dict[str, object] = {"timeout": request_timeout}
         if offset is not None:
             params["offset"] = offset
         request = Request(f"{self.api_root}/getUpdates?{urlencode(params)}", method="GET")
-        http_timeout = min(timeout + self._longpoll_extra, 60)
+        http_timeout = min(request_timeout + self._longpoll_extra, 60)
         previous_timeout = socket.getdefaulttimeout()
         socket.setdefaulttimeout(http_timeout)
         try:
@@ -136,8 +145,10 @@ class TelegramBotRunner:
         token = self.settings.telegram_bot_token.get_secret_value() if self.settings.telegram_bot_token else None
         self.telegram = telegram_client or TelegramClient(
             token,
+            base_url=self.settings.telegram_base_url,
             timeout=self.settings.telegram_http_timeout,
             longpoll_extra=self.settings.telegram_longpoll_extra_seconds,
+            poll_timeout=self.settings.telegram_poll_timeout,
         )
 
     def status(self) -> dict[str, str]:
@@ -186,7 +197,7 @@ class TelegramBotRunner:
         except ValueError:
             return None
 
-    def poll_once(self, *, offset: int | None = None, timeout: int = 10) -> int:
+    def poll_once(self, *, offset: int | None = None, timeout: int | None = None) -> int:
         processed = 0
         for raw_update in self.telegram.get_updates(offset=offset, timeout=timeout):
             update = self._parse_update(raw_update)
@@ -202,7 +213,7 @@ class TelegramBotRunner:
         offset: int | None = None
         while True:
             try:
-                updates = self.telegram.get_updates(offset=offset, timeout=10)
+                updates = self.telegram.get_updates(offset=offset, timeout=self.settings.telegram_poll_timeout)
             except Exception as exc:
                 warnings.warn(f"Telegram polling failed: {exc}", stacklevel=2)
                 time.sleep(poll_interval)
@@ -222,7 +233,7 @@ class TelegramBotRunner:
         return parse_update_payload(raw)
 
 
-def iter_updates(client: TelegramClient, *, offset: int | None = None, timeout: int = 10) -> Iterable[TelegramUpdate]:
+def iter_updates(client: TelegramClient, *, offset: int | None = None, timeout: int | None = None) -> Iterable[TelegramUpdate]:
     for raw in client.get_updates(offset=offset, timeout=timeout):
         update = parse_update_payload(raw)
         if update is not None:

@@ -77,7 +77,7 @@ class LLMClient:
         chunks: list[str] = []
         stream = self._openai.chat.completions.create(
             model=self.settings.llm_model,
-            temperature=0.8,
+            temperature=self.settings.llm_temperature,
             max_tokens=self.settings.llm_max_tokens,
             stream=True,
             messages=[{"role": "system", "content": system_prompt}, *messages],

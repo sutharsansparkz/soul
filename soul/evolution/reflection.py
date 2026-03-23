@@ -58,13 +58,13 @@ def generate_monthly_reflection(settings: Settings | None = None) -> ReflectionE
     story = story_repo.load()
     soul = load_soul(settings.soul_file)
     client = LLMClient(settings, soul)
-    recent_milestones = db.list_milestones(settings.database_url, limit=5)
-    recent_memories = db.list_memories(settings.database_url, limit=5)
+    recent_milestones = db.list_milestones(settings.database_url, limit=settings.reflection_recent_items_limit)
+    recent_memories = db.list_memories(settings.database_url, limit=settings.reflection_recent_items_limit)
     recent_episodic = db.list_top_episodic_memories(
         settings.database_url,
         user_id=settings.user_id,
         include_cold=False,
-        limit=5,
+        limit=settings.reflection_recent_items_limit,
     )
 
     prompt = _build_reflection_prompt(story, recent_milestones, recent_memories, recent_episodic)
@@ -87,7 +87,7 @@ def generate_monthly_reflection(settings: Settings | None = None) -> ReflectionE
     episodic.add_text(
         entry.summary,
         emotional_tag="reflective",
-        importance=0.7,
+        importance=settings.reflection_memory_importance,
         memory_type="insight",
         metadata={
             "source": "monthly_reflection",
@@ -101,7 +101,7 @@ def generate_monthly_reflection(settings: Settings | None = None) -> ReflectionE
         settings.database_url,
         label="monthly reflection",
         content=entry.summary,
-        importance=0.7,
+        importance=settings.reflection_memory_importance,
         source="reflection",
     )
     return entry
