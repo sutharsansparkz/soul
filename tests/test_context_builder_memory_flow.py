@@ -58,7 +58,7 @@ def test_context_builder_retrieves_up_to_8_and_injects_top_3_to_5(tmp_path):
     db.log_message(settings.database_url, session_id=session_id, role="user", content="Checking in.")
     db.log_message(settings.database_url, session_id=session_id, role="assistant", content="I am listening.")
 
-    episodic_repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    episodic_repo = EpisodicMemoryRepository(settings=settings)
     now = datetime(2026, 3, 19, tzinfo=timezone.utc)
     for index in range(10):
         ts = (now - timedelta(days=index)).isoformat()
@@ -96,7 +96,7 @@ def test_context_builder_prefers_more_recent_memory_on_ties(tmp_path):
         energy="steady",
     )
     session_id = db.create_session(settings.database_url, "Ara")
-    episodic_repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    episodic_repo = EpisodicMemoryRepository(settings=settings)
     episodic_repo.add_text(
         "launch planning with investors",
         importance=0.6,

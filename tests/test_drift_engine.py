@@ -7,15 +7,16 @@ from sqlalchemy import text
 
 from soul import db
 from soul.config import Settings
-from soul.evolution.drift_engine import SOUL_BASELINE, run_weekly_drift
-from soul.tasks.drift_weekly import derive_resonance_signals, run_drift_task
+from soul.maintenance.drift import derive_resonance_signals, run_drift_task
+from soul.memory.repositories.personality import PersonalityStateRepository
+from soul.state.drift import SOUL_BASELINE, run_weekly_drift
 
 
 def test_weekly_drift_applies_small_adjustments():
     current = dict(SOUL_BASELINE)
     signals = {"warmth_expression": 1.0, "directness": -1.0}
 
-    updated = run_weekly_drift(current, signals)
+    updated = run_weekly_drift(current, signals, settings=Settings(_env_file=None))
 
     assert updated["warmth_expression"] == 0.51
     assert updated["directness"] == 0.49
@@ -25,7 +26,7 @@ def test_weekly_drift_is_clamped_to_baseline_window():
     current = {key: 0.7 for key in SOUL_BASELINE}
     signals = {key: 1.0 for key in SOUL_BASELINE}
 
-    updated = run_weekly_drift(current, signals)
+    updated = run_weekly_drift(current, signals, settings=Settings(_env_file=None))
 
     assert all(value <= 0.7 for value in updated.values())
     assert all(0.3 <= value <= 0.7 for value in updated.values())
@@ -38,7 +39,7 @@ def test_weekly_drift_uses_only_known_state_dimensions_and_ignores_extra_signals
         "ignored_signal": 1.0,
     }
 
-    updated = run_weekly_drift(current, signals)
+    updated = run_weekly_drift(current, signals, settings=Settings(_env_file=None))
 
     assert updated["humor_intensity"] == 0.51
     assert "ignored_signal" not in updated
@@ -65,19 +66,18 @@ def test_run_drift_task_skips_writes_when_disabled(tmp_path):
         database_url=database_url,
         soul_data_path=str(tmp_path / "soul_data"),
         drift_enabled=False,
+        enable_drift=True,
     )
-    personality_path = tmp_path / "personality.json"
-    log_path = tmp_path / "drift_log.json"
     existing = dict(SOUL_BASELINE)
     existing["directness"] = 0.62
-    personality_path.write_text(json.dumps(existing, ensure_ascii=True), encoding="utf-8")
+    repo = PersonalityStateRepository(database_url, user_id=settings.user_id)
+    repo.record_state(existing, resonance_signals={}, notes="seed", source="test")
 
-    result = run_drift_task(personality_path, log_path, {"directness": 1.0}, settings=settings)
+    result = run_drift_task(resonance_signals={"directness": 1.0}, settings=settings)
 
-    assert result.updated == existing
-    assert json.loads(personality_path.read_text(encoding="utf-8")) == existing
-    assert not log_path.exists()
-    assert db.list_drift_log(database_url) == []
+    assert result["updated"] == existing
+    history = repo.list_history(limit=10)
+    assert len(history) == 1
 
 
 def test_derive_resonance_signals_caps_engagement_after_mood_bonus(tmp_path):

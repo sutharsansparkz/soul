@@ -8,6 +8,35 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
+DEFAULT_SOUL_YAML = """\
+identity:
+  name: "Ara"
+  voice: "warm, dry wit, occasionally poetic"
+  energy: "medium - calm but present"
+
+character:
+  humor: "dry observational, never cruel"
+  quirks:
+    - "notices small details other people miss"
+    - "has strong opinions about music"
+    - "remembers exactly what you said last week"
+  aesthetics:
+    music: ["ambient", "jazz", "90s indie"]
+    ideas: ["philosophy of mind", "urban design", "linguistics"]
+
+ethics:
+  believes:
+    - "honesty is more respectful than comfort"
+    - "people deserve to be seen, not managed"
+  will_not:
+    - "pretend to agree when she disagrees"
+    - "give hollow validation"
+
+worldview:
+  on_people: "fundamentally interesting, even when difficult"
+  on_growth: "slow and nonlinear - not a checklist"
+  on_the_relationship: "here to witness your life, not optimize it"
+"""
 
 
 def _redact_url_credentials(value: str) -> str:
@@ -34,7 +63,6 @@ class Settings(BaseSettings):
 
     database_url: str | None = Field(default=None, alias="DATABASE_URL")
     soul_data_path: str = Field(default="./soul_data", alias="SOUL_DATA_DIR")
-    redis_url: str = Field(default="redis://localhost:6379", alias="REDIS_URL")
 
     llm_model: str = Field(default="gpt-4o", alias="LLM_MODEL")
     llm_max_tokens: int = Field(default=800, alias="LLM_MAX_TOKENS")
@@ -138,6 +166,12 @@ class Settings(BaseSettings):
     telegram_longpoll_extra_seconds: int = Field(default=20, alias="TELEGRAM_LONGPOLL_EXTRA_SECONDS")
     voice_transcription_model: str = Field(default="base", alias="VOICE_TRANSCRIPTION_MODEL")
     voice_playback_timeout: int = Field(default=60, alias="VOICE_PLAYBACK_TIMEOUT")
+    enable_telegram: bool = Field(default=False, alias="ENABLE_TELEGRAM")
+    enable_voice: bool = Field(default=False, alias="ENABLE_VOICE")
+    enable_proactive: bool = Field(default=True, alias="ENABLE_PROACTIVE")
+    enable_reflection: bool = Field(default=True, alias="ENABLE_REFLECTION")
+    enable_drift: bool = Field(default=True, alias="ENABLE_DRIFT")
+    enable_background_jobs: bool = Field(default=True, alias="ENABLE_BACKGROUND_JOBS")
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -170,38 +204,6 @@ class Settings(BaseSettings):
         return self.soul_data_dir / "soul.yaml"
 
     @property
-    def personality_file(self) -> Path:
-        return self.soul_data_dir / "personality.json"
-
-    @property
-    def user_story_file(self) -> Path:
-        return self.soul_data_dir / "user_story.json"
-
-    @property
-    def drift_log_file(self) -> Path:
-        return self.soul_data_dir / "drift_log.json"
-
-    @property
-    def shared_language_file(self) -> Path:
-        return self.soul_data_dir / "shared_language.json"
-
-    @property
-    def reach_out_candidates_file(self) -> Path:
-        return self.soul_data_dir / "reach_out_candidates.json"
-
-    @property
-    def reflections_file(self) -> Path:
-        return self.soul_data_dir / "reflections.json"
-
-    @property
-    def milestones_file(self) -> Path:
-        return self.soul_data_dir / "milestones.json"
-
-    @property
-    def episodic_memory_file(self) -> Path:
-        return self.soul_data_dir / "episodic_memory.jsonl"
-
-    @property
     def session_log_dir(self) -> Path:
         return self.soul_data_dir / "logs"
 
@@ -214,12 +216,12 @@ class Settings(BaseSettings):
         return self.session_log_dir / "archive"
 
     @property
-    def consolidation_ledger_file(self) -> Path:
-        return self.soul_data_dir / "consolidation_ledger.json"
+    def exports_dir(self) -> Path:
+        return self.soul_data_dir / "exports"
 
     @property
-    def proactive_delivery_log_file(self) -> Path:
-        return self.soul_data_dir / "proactive_delivery_log.json"
+    def temp_dir(self) -> Path:
+        return self.soul_data_dir / "tmp"
 
     @property
     def sqlite_path(self) -> Path:
@@ -240,8 +242,23 @@ class Settings(BaseSettings):
         return _redact_url_credentials(self.database_url)
 
     @property
-    def redacted_redis_url(self) -> str:
-        return _redact_url_credentials(self.redis_url)
+    def maintenance_retention_days(self) -> int:
+        return self.raw_retention_days
+
+    @property
+    def enabled_features(self) -> dict[str, bool]:
+        return {
+            "telegram": self.enable_telegram,
+            "voice": self.enable_voice,
+            "proactive": self.enable_proactive,
+            "reflection": self.enable_reflection,
+            "drift": self.enable_drift,
+            "background_jobs": self.enable_background_jobs,
+        }
+
+    @property
+    def default_soul_yaml(self) -> str:
+        return DEFAULT_SOUL_YAML
 
     def as_redacted_dict(self) -> dict[str, object]:
         redacted = self.model_dump()
@@ -250,14 +267,13 @@ class Settings(BaseSettings):
         redacted["telegram_bot_token"] = _redact_secret_value(self.telegram_bot_token)
         redacted["root_dir"] = str(self.root_dir)
         redacted["soul_file"] = str(self.soul_file)
-        redacted["personality_file"] = str(self.personality_file)
-        redacted["user_story_file"] = str(self.user_story_file)
         redacted["soul_data_dir"] = str(self.soul_data_dir)
         redacted["database_url"] = self.redacted_database_url
-        redacted["redis_url"] = self.redacted_redis_url
         if self.database_is_sqlite:
             redacted["sqlite_path"] = str(self.sqlite_path)
         redacted["session_archive_dir"] = str(self.session_archive_dir)
+        redacted["exports_dir"] = str(self.exports_dir)
+        redacted["enabled_features"] = self.enabled_features
         return redacted
 
 

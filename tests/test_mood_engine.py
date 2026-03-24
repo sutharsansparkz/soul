@@ -25,7 +25,7 @@ def test_mood_engine_analyze_uses_openai_mood_label(monkeypatch, live_llm_reques
         assert mood_snapshot.rationale.startswith("openai mood prompt")
         return
 
-    settings = Settings(redis_url="redis://localhost:6399/0", _env_file=None)
+    settings = Settings(_env_file=None)
     engine = MoodEngine(settings)
     monkeypatch.setattr(
         MoodEngine,
@@ -60,7 +60,7 @@ def test_mood_engine_retains_state_without_redis(monkeypatch, live_llm_requested
         assert engine.current_state("test-user-state") is not None
         return
 
-    settings = Settings(redis_url="redis://localhost:6399/0", _env_file=None)
+    settings = Settings(_env_file=None)
     engine = MoodEngine(settings)
     now = datetime(2026, 3, 20, 12, 0, tzinfo=timezone.utc)
     responses = iter(

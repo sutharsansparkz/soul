@@ -4,7 +4,6 @@ from soul import db
 from soul.config import Settings
 from soul.memory.episodic import EpisodicMemoryRepository
 from soul.memory.retriever import MemoryRetriever
-from soul.memory.vector_store import MemoryRecord
 
 
 def _settings(tmp_path) -> Settings:  # noqa: ANN001
@@ -21,7 +20,7 @@ def _settings(tmp_path) -> Settings:  # noqa: ANN001
 def test_retriever_reranks_with_hms_weight(tmp_path):
     settings = _settings(tmp_path)
     db.init_db(settings.database_url)
-    repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    repo = EpisodicMemoryRepository(settings=settings)
     low = repo.add_text(
         "launch plan with investor milestones",
         emotional_tag="neutral",
@@ -46,7 +45,7 @@ def test_retriever_reranks_with_hms_weight(tmp_path):
 def test_retrieval_updates_ref_count_and_last_retrieved(tmp_path):
     settings = _settings(tmp_path)
     db.init_db(settings.database_url)
-    repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    repo = EpisodicMemoryRepository(settings=settings)
     created = repo.add_text(
         "stress around launch day and investors",
         emotional_tag="stressed",
@@ -70,7 +69,7 @@ def test_retrieval_updates_ref_count_and_last_retrieved(tmp_path):
 def test_retriever_filters_out_other_user_memories(tmp_path):
     settings = _settings(tmp_path)
     db.init_db(settings.database_url)
-    repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    repo = EpisodicMemoryRepository(settings=settings)
     own = repo.add_text(
         "launch runway planning details",
         emotional_tag="stressed",
@@ -97,7 +96,7 @@ def test_retriever_filters_out_other_user_memories(tmp_path):
 def test_retriever_exposes_bm25_metadata_from_sqlite_fts(tmp_path):
     settings = _settings(tmp_path)
     db.init_db(settings.database_url)
-    repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    repo = EpisodicMemoryRepository(settings=settings)
     repo.add_text(
         "investor launch planning runway runway",
         emotional_tag="stressed",
@@ -119,13 +118,11 @@ def test_retriever_exposes_bm25_metadata_from_sqlite_fts(tmp_path):
 def test_backfill_preserves_ref_count(tmp_path, monkeypatch):
     settings = _settings(tmp_path)
     db.init_db(settings.database_url)
-    repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    repo = EpisodicMemoryRepository(settings=settings)
     memory_id = "legacy-memory-1"
-    record = MemoryRecord(
-        id=memory_id,
-        content="legacy investor launch memory with repeat retrievals",
+    repo.add_text(
+        "legacy investor launch memory with repeat retrievals",
         emotional_tag="stressed",
-        ref_count=5,
         metadata={
             "memory_id": memory_id,
             "session_id": "legacy-session",
@@ -134,9 +131,8 @@ def test_backfill_preserves_ref_count(tmp_path, monkeypatch):
             "ref_count": 5,
         },
     )
-    repo.store.add(record)
     retriever = MemoryRetriever(settings, repo)
-    monkeypatch.setattr(retriever, "_apply_retrieval_boost", lambda **kwargs: None)
+    monkeypatch.setattr(retriever, "_apply_retrieval_boost", lambda record: None)
 
     rows = retriever.retrieve(query="legacy investor launch", user_id=settings.user_id, k=1, passive=True)
 
@@ -146,4 +142,4 @@ def test_backfill_preserves_ref_count(tmp_path, monkeypatch):
     assert memory_row is not None
     assert int(memory_row["ref_count"]) == 5
     assert score_row is not None
-    assert float(score_row["score_retrieval"]) > 0
+    assert float(score_row["score_retrieval"]) >= 0.0

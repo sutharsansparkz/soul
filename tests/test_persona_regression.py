@@ -48,7 +48,6 @@ def test_persona_regression_fixtures_are_stable_and_deterministic(tmp_path, monk
         openai_api_key=None,
         database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
         soul_data_path=str(tmp_path / "soul_data"),
-        redis_url="redis://localhost:6399/0",
         _env_file=None,
     )
     soul = Soul(

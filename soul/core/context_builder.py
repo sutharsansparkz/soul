@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from soul import db
 from soul.config import Settings
-from soul.core.mood_engine import MoodSnapshot
 from soul.core.soul_loader import Soul, compile_system_prompt
+from soul.core.mood_engine import MoodSnapshot
 from soul.memory.episodic import EpisodicMemoryRepository
-from soul.memory.user_story import UserStoryRepository
+from soul.memory.repositories.messages import MessagesRepository
+from soul.memory.repositories.personality import PersonalityStateRepository
+from soul.memory.repositories.user_facts import UserFactsRepository
+from soul.memory.vector_store import MemoryRecord
 from soul.memory.vector_store import format_memory_blocks
 
 
@@ -17,25 +19,29 @@ class ContextBundle:
     messages: list[dict[str, str]]
     story_summary: str | None
     memory_snippets: list[str]
+    retrieved_memories: list[MemoryRecord]
+    prompt_sections: list[str]
 
 
 class ContextBuilder:
     def __init__(self, settings: Settings, soul: Soul) -> None:
         self.settings = settings
         self.soul = soul
-        self.story_repo = UserStoryRepository(settings.user_story_file)
-        self._personality_file = settings.personality_file
-        self.episodic_repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+        self.messages = MessagesRepository(settings.database_url, user_id=settings.user_id)
+        self.story_repo = UserFactsRepository(settings.database_url, user_id=settings.user_id)
+        self.personality_repo = PersonalityStateRepository(settings.database_url, user_id=settings.user_id)
+        self.episodic_repo = EpisodicMemoryRepository(settings=settings)
 
     def build(self, *, session_id: str, user_input: str, mood: MoodSnapshot) -> ContextBundle:
-        recent_messages = db.get_recent_session_messages(
-            self.settings.database_url,
+        recent_messages = self.messages.get_recent_session_messages(
             session_id,
             limit=self.settings.context_history_limit,
         )
         story_summary = self._story_summary()
         personality_hint = self._personality_context()
-        memory_snippets = self._memory_context(user_input)
+        retrieved_memories = self._retrieve_memories(user_input)
+        memory_snippets = format_memory_blocks(retrieved_memories[: self.settings.memory_retrieval_k])
+        prompt_sections = ["mood", "soul_prompt"]
 
         system_parts = [
             f"[user_mood: {mood.user_mood}]",
@@ -45,14 +51,17 @@ class ContextBuilder:
             compile_system_prompt(self.soul),
         ]
         if story_summary:
+            prompt_sections.append("story")
             system_parts.extend(["", "[user_story]", story_summary])
         if personality_hint:
+            prompt_sections.append("personality")
             system_parts.extend(["", "[personality_drift]", personality_hint])
         if memory_snippets:
+            prompt_sections.append("memory")
             system_parts.extend(["", "[memory_context]"])
             system_parts.extend(memory_snippets)
 
-        messages = [{"role": row["role"], "content": str(row["content"])} for row in recent_messages]
+        messages = [{"role": str(row["role"]), "content": str(row["content"])} for row in recent_messages]
         messages.append({"role": "user", "content": user_input})
 
         return ContextBundle(
@@ -60,13 +69,12 @@ class ContextBuilder:
             messages=messages,
             story_summary=story_summary,
             memory_snippets=memory_snippets,
+            retrieved_memories=retrieved_memories,
+            prompt_sections=prompt_sections,
         )
 
     def _story_summary(self) -> str | None:
-        story = self.story_repo.load()
-        if not story.user_id or story.user_id == "unknown":
-            story.user_id = self.settings.user_id
-            self.story_repo.save(story)
+        story = self.story_repo.load_story()
         parts: list[str] = []
         if story.basics:
             bits = ", ".join(f"{key}: {value}" for key, value in story.basics.items() if value)
@@ -86,17 +94,9 @@ class ContextBuilder:
         return "\n".join(parts) if parts else None
 
     def _personality_context(self) -> str | None:
-        if not self._personality_file.exists():
+        dims = self.personality_repo.get_current_state()
+        if not dims:
             return None
-        try:
-            import json
-
-            dims = json.loads(self._personality_file.read_text(encoding="utf-8"))
-        except Exception:
-            return None
-        if not isinstance(dims, dict) or not dims:
-            return None
-
         dimension_hints: dict[str, tuple[str, str]] = {
             "humor_intensity": ("serious and measured", "playful, witty, light"),
             "response_length": ("terse and brief", "expansive and thorough"),
@@ -106,7 +106,6 @@ class ContextBuilder:
         }
         baseline = self.settings.personality_drift_baseline
         threshold = self.settings.personality_drift_render_threshold
-
         lines: list[str] = []
         for dim, value in dims.items():
             if dim not in dimension_hints:
@@ -124,20 +123,14 @@ class ContextBuilder:
                 lines.append(f"- {label}: lean toward {high_end} (score {score:.2f})")
             else:
                 lines.append(f"- {label}: lean toward {low_end} (score {score:.2f})")
-
         if not lines:
             return None
         return "Your current personality drift:\n" + "\n".join(lines)
 
-    def _memory_context(self, query: str) -> list[str]:
-        episodic = self.episodic_repo.retrieve(
+    def _retrieve_memories(self, query: str) -> list[MemoryRecord]:
+        return self.episodic_repo.retrieve(
             query=query,
             user_id=self.settings.user_id,
             k=self.settings.memory_retrieval_k,
             passive=True,
         )
-        if episodic:
-            return format_memory_blocks(episodic[: self.settings.memory_retrieval_k])
-
-        fallback = db.search_memories(self.settings.database_url, query=query, limit=self.settings.memory_retrieval_k)
-        return [f"[memory:manual] {item['label']}: {item['content']}" for item in fallback[: self.settings.memory_retrieval_k]]

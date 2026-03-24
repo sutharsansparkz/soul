@@ -53,7 +53,7 @@ def test_memories_list_uses_relative_timestamps(tmp_path, monkeypatch):
         SimpleNamespace(now=lambda tz: fixed_now, fromisoformat=real_datetime.fromisoformat),
     )
 
-    episodic_repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    episodic_repo = EpisodicMemoryRepository(settings=settings)
     episodic_repo.add_text(
         "I launched the beta and felt alive.",
         emotional_tag="celebrating",
@@ -84,7 +84,7 @@ def test_memories_cold_uses_relative_timestamps(tmp_path, monkeypatch):
         SimpleNamespace(now=lambda tz: fixed_now, fromisoformat=real_datetime.fromisoformat),
     )
 
-    episodic_repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    episodic_repo = EpisodicMemoryRepository(settings=settings)
     created = episodic_repo.add_text(
         "small weather remark",
         emotional_tag="neutral",

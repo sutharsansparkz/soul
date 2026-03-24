@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from soul import db
-from soul.tasks.consolidate import archive_and_purge_old_session_messages
+from soul.maintenance.consolidation import archive_and_purge_old_session_messages
 from sqlalchemy import text
 
 

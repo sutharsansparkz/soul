@@ -4,8 +4,8 @@ import json
 import os
 import re
 import shlex
-import shutil
 import subprocess
+import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -18,6 +18,8 @@ from rich.table import Table
 from rich.text import Text
 
 from soul import __version__, db
+from soul.bootstrap import FeatureInitializationError, validate_startup
+from soul.conversation.orchestrator import ConversationOrchestrator
 from soul.config import Settings, get_settings
 from soul.core.context_builder import ContextBuilder
 from soul.core.llm_client import LLMClient, LLMResult
@@ -25,62 +27,35 @@ from soul.core.mood_engine import MoodEngine, MoodSnapshot
 from soul.core.presence_context import build_presence_context, runtime_now
 from soul.core.post_processor import PostProcessor
 from soul.core.soul_loader import Soul, load_soul
-from soul.evolution.drift_engine import DriftLogRepository
-from soul.evolution.reflection import generate_monthly_reflection
 from soul.memory.episodic import EpisodicMemoryRepository
+from soul.memory.repositories.messages import MessagesRepository
+from soul.memory.repositories.mood import MoodSnapshotsRepository
+from soul.memory.repositories.personality import PersonalityStateRepository
+from soul.memory.repositories.proactive import ProactiveCandidateRepository
+from soul.memory.repositories.user_facts import UserFactsRepository
+from soul.maintenance.consolidation import consolidate_pending_sessions
+from soul.maintenance.decay import run_hms_decay
+from soul.maintenance.drift import derive_resonance_signals, run_drift_task
+from soul.maintenance.jobs import run_enabled_maintenance
+from soul.maintenance.proactive import ReachOutCandidate, dispatch_reach_out_candidates, refresh_proactive_candidates
+from soul.maintenance.reflection import generate_monthly_reflection
+from soul.observability.traces import TurnTraceRepository
 from soul.presence.telegram import TelegramBotRunner
 from soul.presence.voice import VoiceBridge
-from soul.memory.user_story import UserStory, UserStoryRepository
-from soul.tasks.consolidate import archive_and_purge_old_session_messages, consolidate_pending_sessions
-from soul.tasks.drift_weekly import derive_resonance_signals, run_drift_task
-from soul.tasks.hms_decay import run_hms_decay
-from soul.tasks.proactive import (
-    build_reach_out_candidates,
-    dispatch_reach_out_candidates,
-    load_reach_out_candidates,
-    save_reach_out_candidates,
-)
+from soul.memory.user_story import UserStory
 
 
 app = typer.Typer(help="SOUL, an AI companion from your terminal.", add_completion=False)
 memories_app = typer.Typer(help="Memory commands.", invoke_without_command=True, no_args_is_help=False)
 story_app = typer.Typer(help="User story commands.", invoke_without_command=True, no_args_is_help=False)
 db_app = typer.Typer(help="Database commands.", invoke_without_command=True, no_args_is_help=False)
+debug_app = typer.Typer(help="Debug inspection commands.", invoke_without_command=True, no_args_is_help=False)
 app.add_typer(memories_app, name="memories")
 app.add_typer(story_app, name="story")
 app.add_typer(db_app, name="db")
+app.add_typer(debug_app, name="debug")
 
 console = Console(width=120)
-
-_DEFAULT_SOUL_YAML = """\
-identity:
-  name: "Ara"
-  voice: "warm, dry wit, occasionally poetic"
-  energy: "medium - calm but present"
-
-character:
-  humor: "dry observational, never cruel"
-  quirks:
-    - "notices small details other people miss"
-    - "has strong opinions about music"
-    - "remembers exactly what you said last week"
-  aesthetics:
-    music: ["ambient", "jazz", "90s indie"]
-    ideas: ["philosophy of mind", "urban design", "linguistics"]
-
-ethics:
-  believes:
-    - "honesty is more respectful than comfort"
-    - "people deserve to be seen, not managed"
-  will_not:
-    - "pretend to agree when she disagrees"
-    - "give hollow validation"
-
-worldview:
-  on_people: "fundamentally interesting, even when difficult"
-  on_growth: "slow and nonlinear - not a checklist"
-  on_the_relationship: "here to witness your life, not optimize it"
-"""
 
 
 def _relative_time(iso_str: str) -> str:
@@ -142,7 +117,7 @@ def _message_milestone_label(count: int) -> str:
 def _bootstrap() -> tuple[Settings, Soul]:
     settings = get_settings()
     _ensure_runtime_files(settings)
-    db.init_db(settings.database_url)
+    validate_startup(settings)
     soul = load_soul(settings.soul_file)
     return settings, soul
 
@@ -169,26 +144,11 @@ def _ensure_runtime_files(settings: Settings) -> None:
         _mkdir_secure(settings.sqlite_path.parent)
     _mkdir_secure(settings.session_log_dir)
     _mkdir_secure(settings.session_archive_dir)
-
-    for path, default in (
-        (settings.reach_out_candidates_file, "[]\n"),
-        (settings.shared_language_file, "[]\n"),
-        (settings.drift_log_file, "[]\n"),
-        (settings.consolidation_ledger_file, "{}\n"),
-        (settings.proactive_delivery_log_file, "{}\n"),
-        (settings.episodic_memory_file, ""),
-        (settings.reflections_file, "[]\n"),
-        (settings.milestones_file, "[]\n"),
-    ):
-        if not path.exists():
-            _write_secure(path, default)
+    _mkdir_secure(settings.exports_dir)
+    _mkdir_secure(settings.temp_dir)
 
     if not settings.soul_file.exists():
-        fallback_soul = settings.root_dir / "soul_data" / "soul.yaml"
-        if fallback_soul.exists() and fallback_soul != settings.soul_file:
-            shutil.copy2(fallback_soul, settings.soul_file)
-        else:
-            _write_secure(settings.soul_file, _DEFAULT_SOUL_YAML)
+        _write_secure(settings.soul_file, settings.default_soul_yaml)
         try:
             settings.soul_file.chmod(0o600)
         except OSError:
@@ -261,6 +221,47 @@ def _print_turn_trace(soul: Soul, mood: MoodSnapshot, bundle: object) -> None:
     console.print(f"[dim]{soul.name} is thinking through the reply...[/dim]")
 
 
+def _run_orchestrated_turn(
+    orchestrator: ConversationOrchestrator,
+    *,
+    soul: Soul,
+    session_id: str,
+    user_input: str,
+) -> tuple[object, MoodSnapshot]:
+    emitted_chunks = False
+    observed_mood: MoodSnapshot | None = None
+
+    def handle_chunk(chunk: str) -> None:
+        nonlocal emitted_chunks
+        if not chunk:
+            return
+        emitted_chunks = True
+        console.print(Text(chunk, style="white"), end="", soft_wrap=True)
+        console.file.flush()
+
+    def before_generate(mood: MoodSnapshot, bundle: object) -> None:
+        nonlocal observed_mood
+        observed_mood = mood
+        console.print(
+            f"[dim]{soul.name} mood[/dim] "
+            f"[magenta]{mood.companion_state}[/magenta] "
+            f"[dim](user: {mood.user_mood})[/dim]"
+        )
+        _print_turn_trace(soul, mood, bundle)
+
+    console.print(f"[bold magenta]{soul.name}[/bold magenta] > ", end="")
+    result = orchestrator.run_turn(
+        session_id=session_id,
+        user_text=user_input,
+        stream_handler=handle_chunk,
+        before_generate=before_generate,
+    )
+    if not emitted_chunks and result.llm_result.text:
+        console.print(Text(result.llm_result.text, style="white"), end="", soft_wrap=True)
+    console.print()
+    return result, observed_mood or result.mood
+
+
 def _show_last_session(settings: Settings) -> None:
     session_id = db.get_last_completed_session_id(settings.database_url)
     if not session_id:
@@ -276,47 +277,36 @@ def _show_last_session(settings: Settings) -> None:
     console.print(table)
 
 
-def _render_story(path: Path) -> None:
-    if not path.exists():
+def _render_story(settings: Settings) -> None:
+    payload = UserFactsRepository(settings.database_url, user_id=settings.user_id).export_story_payload()
+    if not any(payload.values()):
         console.print("[dim]No user story exists yet.[/dim]")
         return
-    payload = json.loads(path.read_text(encoding="utf-8"))
     console.print_json(json.dumps(payload))
 
 
 def _refresh_reach_out_candidates(settings: Settings) -> None:
-    """Refresh reach-out candidates on chat startup. Silent and best-effort."""
-    try:
-        story_repo = UserStoryRepository(settings.user_story_file)
-        now = datetime.now(timezone.utc)
-        presence_context = build_presence_context(settings.database_url, settings)
-        candidates = build_reach_out_candidates(
-            days_since_last_chat=presence_context["days_since_last_chat"],
-            story=story_repo.load(),
-            today=now,
-            stress_signal_dates=presence_context["stress_signal_dates"],
-            milestones_today=presence_context["milestones_today"],
-            settings=settings,
-        )
-        save_reach_out_candidates(settings.reach_out_candidates_file, candidates)
-    except Exception:
-        pass
+    """Refresh reach-out candidates on chat startup via SQLite-backed storage."""
+    if not settings.enable_proactive:
+        return
+    refresh_proactive_candidates(settings, channel="cli")
 
 
 def _show_pending_reach_outs(settings: Settings, soul: Soul) -> None:
     """Show pending CLI reach-out messages once, then clear them."""
-    if settings.telegram_bot_token and settings.telegram_chat_id:
+    if settings.enable_telegram:
         return
 
-    candidates = load_reach_out_candidates(settings.reach_out_candidates_file)
-    if not candidates:
+    repo = ProactiveCandidateRepository(settings.database_url, user_id=settings.user_id)
+    rows = repo.list_pending(channel="cli", limit=settings.chat_pending_reach_out_limit)
+    if not rows:
         return
 
-    for candidate in candidates[: settings.chat_pending_reach_out_limit]:
+    for row in rows:
         console.print()
         console.print(
             Panel(
-                f"[italic]{candidate.message}[/italic]",
+                f"[italic]{row['message']}[/italic]",
                 title=f"[dim]{soul.name}[/dim]",
                 box=box.SIMPLE,
                 border_style="magenta",
@@ -324,7 +314,7 @@ def _show_pending_reach_outs(settings: Settings, soul: Soul) -> None:
         )
         console.print()
 
-    save_reach_out_candidates(settings.reach_out_candidates_file, [])
+    repo.clear_pending(channel="cli")
 
 
 def _voice_output(voice_bridge: VoiceBridge, enabled: bool, text: str) -> None:
@@ -453,7 +443,7 @@ def _handle_session_command(
         return False, voice_output_enabled, voice_chat_mode
 
     if command == "/story":
-        _render_story(settings.user_story_file)
+        _render_story(settings)
         return False, voice_output_enabled, voice_chat_mode
 
     if command == "/save":
@@ -473,11 +463,11 @@ def _handle_session_command(
                 "flagged": True,
                 "timestamp": db.utcnow_iso(),
                 "source": "manual_save",
+                "label": "manual note",
             },
         )
         memory_id = str(saved.metadata.get("memory_id", saved.id))
         boosted = episodic_repo.boost(memory_id)
-        db.save_memory(settings.database_url, label="manual note", content=note, session_id=session_id, importance=0.9)
         score = float(boosted["hms_score"]) if boosted and "hms_score" in boosted else float(saved.metadata.get("hms_score", 0.5))
         console.print(f"[green]Saved and boosted memory.[/green] HMS={score:.2f}")
         return False, voice_output_enabled, voice_chat_mode
@@ -494,6 +484,9 @@ def _handle_session_command(
             console.print("[green]Voice input and output disabled for this session.[/green]")
             return False, voice_output_enabled, voice_chat_mode
 
+        if not settings.enable_voice:
+            console.print("[yellow]Voice feature is disabled. Set ENABLE_VOICE=true to use /voice on.[/yellow]")
+            return False, voice_output_enabled, voice_chat_mode
         voice_output_enabled = True
         if getattr(voice_bridge, "can_record", True):
             voice_chat_mode = True
@@ -518,17 +511,27 @@ def chat(
     record_seconds: int = typer.Option(0, "--record-seconds", help="Record microphone input before the session when sounddevice is available."),
 ) -> None:
     settings, soul = _bootstrap()
+    if voice and not settings.enable_voice:
+        console.print("[yellow]Voice feature is disabled. Set ENABLE_VOICE=true to use --voice.[/yellow]")
+        raise typer.Exit(code=1)
+    if (voice_input or record_seconds > 0) and not settings.enable_voice:
+        console.print("[yellow]Voice feature is disabled. Set ENABLE_VOICE=true to use voice input.[/yellow]")
+        raise typer.Exit(code=1)
     _refresh_reach_out_candidates(settings)
     if replay:
         _show_last_session(settings)
 
-    session_id = db.create_session(settings.database_url, soul.name)
-    mood_engine = MoodEngine(settings)
-    builder = ContextBuilder(settings, soul)
-    client = LLMClient(settings, soul)
-    post_processor = PostProcessor(settings)
+    messages_repo = MessagesRepository(settings.database_url, user_id=settings.user_id)
+    trace_repo = TurnTraceRepository(settings.database_url)
+    session_id = messages_repo.create_session(soul.name)
+    orchestrator = ConversationOrchestrator(settings, soul)
+    orchestrator.mood_engine = MoodEngine(settings)
+    orchestrator.context_loader.builder = ContextBuilder(settings, soul)
+    orchestrator.client = LLMClient(settings, soul)
+    orchestrator.post_processor = PostProcessor(settings)
+    mood_repo = MoodSnapshotsRepository(settings.database_url, user_id=settings.user_id)
     voice_bridge = VoiceBridge(settings)
-    episodic_repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    episodic_repo = EpisodicMemoryRepository(settings=settings)
     current_mood: MoodSnapshot | None = None
     pending_inputs: list[str] = []
     voice_chat_mode = voice
@@ -602,75 +605,88 @@ def chat(
             runtime_query = _match_local_runtime_query(user_input)
             if runtime_query is not None:
                 current_mood = _local_runtime_mood(runtime_query)
-            else:
-                current_mood = mood_engine.analyze(user_input, user_id=settings.user_id)
-            console.print(
-                f"[dim]{soul.name} mood[/dim] "
-                f"[magenta]{current_mood.companion_state}[/magenta] "
-                f"[dim](user: {current_mood.user_mood})[/dim]"
-            )
-            user_metadata: dict[str, object] = {
-                "confidence": current_mood.confidence,
-                "rationale": current_mood.rationale,
-                "word_count": len(user_input.split()),
-            }
-            if runtime_query is not None:
-                user_metadata["local_action"] = runtime_query
-                user_metadata["skip_memory"] = True
-            db.log_message(
-                settings.database_url,
-                session_id=session_id,
-                role="user",
-                content=user_input,
-                user_mood=current_mood.user_mood,
-                companion_state=current_mood.companion_state,
-                provider="local",
-                metadata=user_metadata,
-            )
 
             if runtime_query is not None:
+                console.print(
+                    f"[dim]{soul.name} mood[/dim] "
+                    f"[magenta]{current_mood.companion_state}[/magenta] "
+                    f"[dim](user: {current_mood.user_mood})[/dim]"
+                )
+                user_message_id = messages_repo.log_message(
+                    session_id=session_id,
+                    role="user",
+                    content=user_input,
+                    user_mood=current_mood.user_mood,
+                    companion_state=current_mood.companion_state,
+                    provider="local",
+                    metadata={
+                        "confidence": current_mood.confidence,
+                        "rationale": current_mood.rationale,
+                        "word_count": len(user_input.split()),
+                        "local_action": runtime_query,
+                        "skip_memory": True,
+                    },
+                )
+                mood_repo.add_snapshot(
+                    session_id=session_id,
+                    message_id=user_message_id,
+                    user_mood=current_mood.user_mood,
+                    companion_state=current_mood.companion_state,
+                    confidence=current_mood.confidence,
+                    rationale=current_mood.rationale,
+                )
                 _print_local_runtime_trace(soul, current_mood, query_kind=runtime_query)
                 result = _local_runtime_reply(settings, speaker_name=soul.name, query_kind=runtime_query)
-            else:
-                bundle = builder.build(session_id=session_id, user_input=user_input, mood=current_mood)
-                _print_turn_trace(soul, current_mood, bundle)
-                result = _render_live_reply(
-                    client,
-                    speaker_name=soul.name,
-                    system_prompt=bundle.system_prompt,
-                    messages=bundle.messages,
-                    mood=current_mood,
-                )
-            _voice_output(voice_bridge, voice_output_enabled, result.text)
-
-            assistant_metadata: dict[str, object] = {
-                "model": result.model,
-                "fallback_used": result.fallback_used,
-                "error": result.error,
-            }
-            if runtime_query is not None:
-                assistant_metadata["local_action"] = runtime_query
-            db.log_message(
-                settings.database_url,
-                session_id=session_id,
-                role="assistant",
-                content=result.text,
-                user_mood=current_mood.user_mood,
-                companion_state=current_mood.companion_state,
-                provider=result.provider,
-                metadata=assistant_metadata,
-            )
-            if runtime_query is None:
-                post_processor.process_turn(
+                _voice_output(voice_bridge, voice_output_enabled, result.text)
+                assistant_message_id = messages_repo.log_message(
                     session_id=session_id,
-                    user_text=user_input,
-                    assistant_text=result.text,
-                    mood=current_mood,
+                    role="assistant",
+                    content=result.text,
+                    user_mood=current_mood.user_mood,
+                    companion_state=current_mood.companion_state,
+                    provider=result.provider,
+                    metadata={
+                        "model": result.model,
+                        "fallback_used": result.fallback_used,
+                        "error": result.error,
+                        "local_action": runtime_query,
+                    },
                 )
+                trace_repo.write_trace(
+                    session_id=session_id,
+                    input_message_id=user_message_id,
+                    reply_message_id=assistant_message_id,
+                    payload={
+                        "retrieved_memories": [],
+                        "retrieved_facts": None,
+                        "personality_state": {},
+                        "mood_snapshot": {
+                            "user_mood": current_mood.user_mood,
+                            "companion_state": current_mood.companion_state,
+                            "confidence": current_mood.confidence,
+                            "rationale": current_mood.rationale,
+                        },
+                        "prompt_sections": ["local_runtime"],
+                        "provider": result.provider,
+                        "model": result.model,
+                        "local_action": runtime_query,
+                        "response_latency_ms": 0.0,
+                        "persisted_records": {},
+                    },
+                )
+            else:
+                turn_result, current_mood = _run_orchestrated_turn(
+                    orchestrator,
+                    soul=soul,
+                    session_id=session_id,
+                    user_input=user_input,
+                )
+                result = turn_result.llm_result
+                _voice_output(voice_bridge, voice_output_enabled, result.text)
             console.print(f"[dim]-- {soul.name}: {current_mood.companion_state} | you: {current_mood.user_mood} --[/dim]")
     finally:
-        db.close_session(settings.database_url, session_id)
-        post_processor.process_session_end(session_id=session_id)
+        messages_repo.close_session(session_id)
+        orchestrator.post_processor.process_session_end(session_id=session_id)
 
 
 @memories_app.callback(invoke_without_command=True)
@@ -678,29 +694,17 @@ def memories_list(ctx: typer.Context) -> None:
     if ctx.invoked_subcommand is not None:
         return
     settings, _ = _bootstrap()
-    episodic_repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    episodic_repo = EpisodicMemoryRepository(settings=settings)
     memories: list[dict[str, object]] = []
     for item in episodic_repo.list_top(limit=120):
+        source = str(item.metadata.get("source") or "episodic")
         memories.append(
             {
-                "source": "episodic",
+                "source": source,
                 "score": _record_hms_score(item),
                 "tier": _record_tier(item),
                 "when": _relative_time(str(item.metadata.get("timestamp") or "-")),
                 "content": str(item.content),
-            }
-        )
-
-    for item in db.list_memories(settings.database_url, limit=40):
-        label = str(item.get("label") or "manual note")
-        content = str(item.get("content") or "")
-        memories.append(
-            {
-                "source": "manual",
-                "score": _clamp01(float(item.get("importance", 0.5))),
-                "tier": "\u2014",
-                "when": _relative_time(str(item.get("created_at") or "-")),
-                "content": f"{label}: {content}",
             }
         )
 
@@ -738,10 +742,9 @@ def memories_list(ctx: typer.Context) -> None:
 @memories_app.command("search")
 def memories_search(query: str = typer.Argument(..., help="Search text.")) -> None:
     settings, _ = _bootstrap()
-    episodic_repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    episodic_repo = EpisodicMemoryRepository(settings=settings)
     episodic = episodic_repo.search(query, limit=20)
-    manual = db.search_memories(settings.database_url, query, limit=20)
-    if not episodic and not manual:
+    if not episodic:
         console.print("[dim]No matching memories found.[/dim]")
         return
 
@@ -750,25 +753,11 @@ def memories_search(query: str = typer.Argument(..., help="Search text.")) -> No
         score = _record_hms_score(item)
         merged.append(
             {
-                "source": "episodic",
+                "source": str(item.metadata.get("source") or "episodic"),
                 "score": score,
                 "tier": _record_tier(item),
                 "content": str(item.content),
                 "rank": _record_retrieval_rank(item, query=query),
-            }
-        )
-
-    for item in manual:
-        content = f"{item['label']}: {item['content']}"
-        score = _clamp01(float(item.get("importance", 0.5)))
-        semantic = _simple_similarity(query, content)
-        merged.append(
-            {
-                "source": "manual",
-                "score": score,
-                "tier": "-",
-                "content": str(content),
-                "rank": (semantic * 0.55) + (score * 0.45),
             }
         )
 
@@ -794,7 +783,7 @@ def memories_search(query: str = typer.Argument(..., help="Search text.")) -> No
 @memories_app.command("top")
 def memories_top() -> None:
     settings, _ = _bootstrap()
-    episodic_repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    episodic_repo = EpisodicMemoryRepository(settings=settings)
     rows = episodic_repo.list_top(limit=10)
     if not rows:
         console.print("[dim]No memories stored yet.[/dim]")
@@ -811,7 +800,7 @@ def memories_top() -> None:
 @memories_app.command("cold")
 def memories_cold() -> None:
     settings, _ = _bootstrap()
-    episodic_repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    episodic_repo = EpisodicMemoryRepository(settings=settings)
     rows = episodic_repo.list_cold(limit=50)
     if not rows:
         console.print("[dim]No cold memories yet.[/dim]")
@@ -832,7 +821,7 @@ def memories_cold() -> None:
 @memories_app.command("boost")
 def memories_boost(query: str = typer.Argument(..., help="Query to match and boost memory.")) -> None:
     settings, _ = _bootstrap()
-    episodic_repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    episodic_repo = EpisodicMemoryRepository(settings=settings)
     matches = episodic_repo.search(query, limit=5)
     if not matches:
         console.print("[dim]No matching memories found.[/dim]")
@@ -853,10 +842,10 @@ def memories_clear() -> None:
     if not confirmed:
         console.print("[dim]Cancelled.[/dim]")
         return
-    episodic_repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
-    deleted = db.clear_memories(settings.database_url)
-    vector_deleted = episodic_repo.clear()
-    console.print(f"[green]Deleted {deleted} SQL memories and {vector_deleted} episodic/vector entries.[/green]")
+    episodic_repo = EpisodicMemoryRepository(settings=settings)
+    deleted = episodic_repo.clear()
+    db.clear_memories(settings.database_url)
+    console.print(f"[green]Deleted {deleted} SQLite-backed memories.[/green]")
 
 
 def _record_hms_score(record) -> float:
@@ -909,44 +898,50 @@ def story_show(ctx: typer.Context) -> None:
     if ctx.invoked_subcommand is not None:
         return
     settings, _ = _bootstrap()
-    _render_story(settings.user_story_file)
+    _render_story(settings)
 
 
 @story_app.command("edit")
 def story_edit() -> None:
     settings, _ = _bootstrap()
-    story_file = settings.user_story_file
-    story_file.parent.mkdir(parents=True, exist_ok=True)
-    if not story_file.exists():
-        repo = UserStoryRepository(story_file)
-        default = UserStory()
-        default.current_chapter = {
-            "summary": "",
-            "active_goals": [],
-            "active_fears": [],
-            "current_mood_trend": "forming",
-        }
-        repo.save(default)
-
+    story_repo = UserFactsRepository(settings.database_url, user_id=settings.user_id)
+    payload = story_repo.export_story_payload()
+    settings.temp_dir.mkdir(parents=True, exist_ok=True)
+    story_file = settings.temp_dir / f"soul-story-edit-{settings.user_id}.json"
+    story_file.write_text(json.dumps(payload, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
     editor = os.environ.get("SOUL_EDITOR") or os.environ.get("VISUAL") or os.environ.get("EDITOR")
 
     console.print(f"Story file: [cyan]{story_file}[/cyan]")
     if not editor:
         console.print("[yellow]No editor configured. Set SOUL_EDITOR, VISUAL, or EDITOR to launch one automatically.[/yellow]")
+        try:
+            story_file.unlink(missing_ok=True)
+        except OSError:
+            pass
         return
 
     try:
         command = [*shlex.split(editor, posix=os.name != "nt"), str(story_file)]
         subprocess.run(command, check=False)
+        updated = json.loads(story_file.read_text(encoding="utf-8"))
+        story_repo.import_story_payload(updated, source="story_edit")
+        archive_dir = settings.exports_dir / "story-edit-archives"
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        archived = archive_dir / f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{settings.user_id}.json"
+        archived.write_text(json.dumps(updated, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
     except FileNotFoundError:
         console.print(f"[yellow]Editor not found: {editor}[/yellow]")
+    finally:
+        try:
+            story_file.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 @app.command()
 def drift() -> None:
     settings, _ = _bootstrap()
-    repo = DriftLogRepository(settings.drift_log_file)
-    runs = repo.load()
+    runs = PersonalityStateRepository(settings.database_url, user_id=settings.user_id).list_history(limit=20)
     if not runs:
         console.print("[dim]No drift runs recorded yet.[/dim]")
         return
@@ -955,7 +950,11 @@ def drift() -> None:
     table.add_column("Before", style="white")
     table.add_column("After", style="white")
     for row in runs[-20:]:
-        table.add_row(row.run_date, json.dumps(row.dimensions_before), json.dumps(row.dimensions_after))
+        table.add_row(
+            str(row.get("created_at", ""))[:10],
+            "-",
+            str(row.get("state_json", "{}")),
+        )
     console.print(table)
 
 
@@ -979,22 +978,14 @@ def milestones() -> None:
 def status() -> None:
     settings, soul = _bootstrap()
     mood_engine = MoodEngine(settings)
-    voice_bridge = VoiceBridge(settings)
-    telegram_runner = TelegramBotRunner(settings=settings)
-    story_repo = UserStoryRepository(settings.user_story_file)
+    voice_bridge = VoiceBridge(settings) if settings.enable_voice else None
+    telegram_runner = TelegramBotRunner(settings=settings) if settings.enable_telegram else None
     now = runtime_now(settings)
-    total_sessions = db.count_sessions(settings.database_url)
-    total_messages = db.count_messages(settings.database_url)
+    messages_repo = MessagesRepository(settings.database_url, user_id=settings.user_id)
+    total_sessions = messages_repo.count_sessions()
+    total_messages = messages_repo.count_messages()
     presence_context = build_presence_context(settings.database_url, settings, now=now)
-
-    queued_candidates = build_reach_out_candidates(
-        days_since_last_chat=presence_context["days_since_last_chat"],
-        story=story_repo.load(),
-        today=now,
-        stress_signal_dates=presence_context["stress_signal_dates"],
-        milestones_today=presence_context["milestones_today"],
-        settings=settings,
-    )
+    queued_candidates = refresh_proactive_candidates(settings, channel="cli") if settings.enable_proactive else []
 
     current_state = mood_engine.current_state(settings.user_id) or {}
     mood_state = current_state.get("state") or db.get_last_companion_state(settings.database_url) or "no sessions yet"
@@ -1012,8 +1003,8 @@ def status() -> None:
     )
     table.add_row("Companion mood", str(mood_state))
     table.add_row("Reach-out candidates", str(len(queued_candidates)))
-    table.add_row("Voice", voice_bridge.status()["voice"])
-    table.add_row("Telegram", telegram_runner.status()["telegram"])
+    table.add_row("Voice", voice_bridge.status()["voice"] if voice_bridge else "disabled by feature flag")
+    table.add_row("Telegram", telegram_runner.status()["telegram"] if telegram_runner else "disabled by feature flag")
     table.add_row("Next milestone", _next_milestone_label(settings, total_messages, now=now))
     console.print(table)
 
@@ -1021,59 +1012,19 @@ def status() -> None:
 @app.command("run-jobs")
 def run_jobs() -> None:
     settings, _ = _bootstrap()
-    story_repo = UserStoryRepository(settings.user_story_file)
-    results = consolidate_pending_sessions(
-        database_url=settings.database_url,
-        story_path=settings.user_story_file,
-        memory_path=settings.episodic_memory_file,
-        shared_language_path=settings.shared_language_file,
-        ledger_path=settings.consolidation_ledger_file,
-        source="manual",
-        settings=settings,
-    )
-    decay = run_hms_decay()
-    archive = archive_and_purge_old_session_messages(
-        database_url=settings.database_url,
-        archive_dir=settings.session_archive_dir,
-        retention_days=settings.raw_retention_days,
-    )
-    resonance_signals = derive_resonance_signals(settings.database_url, settings=settings)
-    drift_result = run_drift_task(
-        personality_path=settings.personality_file,
-        log_path=settings.drift_log_file,
-        resonance_signals=resonance_signals,
-        settings=settings,
-    )
-    reflection_entry = generate_monthly_reflection(settings)
-    now = runtime_now(settings)
-    presence_context = build_presence_context(settings.database_url, settings, now=now)
-    candidates = build_reach_out_candidates(
-        days_since_last_chat=presence_context["days_since_last_chat"],
-        story=story_repo.load(),
-        today=now,
-        stress_signal_dates=presence_context["stress_signal_dates"],
-        milestones_today=presence_context["milestones_today"],
-        settings=settings,
-    )
-    save_reach_out_candidates(settings.reach_out_candidates_file, candidates)
-    delivery = dispatch_reach_out_candidates(settings, candidates)
+    results = run_enabled_maintenance(settings)
     console.print(
         "[green]Maintenance run completed.[/green] "
-        f"sessions={len(results)} "
-        f"memories={sum(int(item['memories_added']) for item in results)} "
-        f"drift_dims={len(drift_result.updated)} "
-        f"reflection={'1' if reflection_entry else '0'} "
-        f"reach_outs={len(candidates)} "
-        f"delivered={delivery['sent']} "
-        f"decay_updated={decay['updated']} "
-        f"cold_moved={decay['moved_to_cold']} "
-        f"archived={archive['archived_sessions']} "
-        f"purged={archive['purged_messages']}"
+        + json.dumps(results, ensure_ascii=True)
     )
 
 
 @app.command("telegram-bot")
 def telegram_bot() -> None:
+    settings = get_settings()
+    if not settings.enable_telegram:
+        console.print("[yellow]Telegram feature is disabled. Set ENABLE_TELEGRAM=true to use this command.[/yellow]")
+        raise typer.Exit(code=1)
     runner = TelegramBotRunner(settings=get_settings())
     status_map = runner.status()
     table = Table(title="SOUL Telegram Bot", box=box.SIMPLE_HEAVY)
@@ -1108,6 +1059,81 @@ def db_rebuild_fts() -> None:
     settings = get_settings()
     db.rebuild_memory_fts(settings.database_url)
     console.print("[green]FTS5 memory index rebuilt successfully.[/green]")
+
+
+@debug_app.command("last-turn")
+def debug_last_turn() -> None:
+    settings, _ = _bootstrap()
+    trace = TurnTraceRepository(settings.database_url).get_last_trace()
+    if trace is None:
+        console.print("[dim]No turn traces recorded yet.[/dim]")
+        return
+    console.print_json(json.dumps(trace, indent=2, ensure_ascii=True))
+
+
+@debug_app.command("show-mood")
+def debug_show_mood() -> None:
+    settings, _ = _bootstrap()
+    payload = MoodSnapshotsRepository(settings.database_url, user_id=settings.user_id).latest()
+    if payload is None:
+        console.print("[dim]No mood snapshots recorded yet.[/dim]")
+        return
+    console.print_json(json.dumps(payload, indent=2, ensure_ascii=True))
+
+
+@debug_app.command("show-facts")
+def debug_show_facts() -> None:
+    settings, _ = _bootstrap()
+    payload = UserFactsRepository(settings.database_url, user_id=settings.user_id).export_story_payload()
+    console.print_json(json.dumps(payload, indent=2, ensure_ascii=True))
+
+
+@debug_app.command("show-memories")
+def debug_show_memories(limit: int = typer.Option(20, min=1, max=200)) -> None:
+    settings, _ = _bootstrap()
+    records = EpisodicMemoryRepository(settings=settings).list_top(limit=limit)
+    payload = [
+        {
+            "id": str(record.metadata.get("memory_id", record.id)),
+            "content": record.content,
+            "emotional_tag": record.emotional_tag,
+            "memory_type": record.memory_type,
+            "hms_score": record.metadata.get("hms_score"),
+            "tier": record.metadata.get("tier"),
+            "source": record.metadata.get("source"),
+            "session_id": record.metadata.get("session_id"),
+            "timestamp": record.metadata.get("timestamp"),
+        }
+        for record in records
+    ]
+    console.print_json(json.dumps(payload, indent=2, ensure_ascii=True))
+
+
+@debug_app.command("show-personality")
+def debug_show_personality(limit: int = typer.Option(10, min=1, max=100)) -> None:
+    settings, _ = _bootstrap()
+    payload = PersonalityStateRepository(settings.database_url, user_id=settings.user_id).list_history(limit=limit)
+    console.print_json(json.dumps(payload, indent=2, ensure_ascii=True))
+
+
+@debug_app.command("show-trace")
+def debug_show_trace(trace_id: str = typer.Argument(..., help="Trace ID.")) -> None:
+    settings, _ = _bootstrap()
+    trace = TurnTraceRepository(settings.database_url).get_trace(trace_id)
+    if trace is None:
+        console.print(f"[red]Trace not found:[/red] {trace_id}")
+        raise typer.Exit(code=1)
+    console.print_json(json.dumps(trace, indent=2, ensure_ascii=True))
+
+
+@debug_app.command("explain-memory")
+def debug_explain_memory(memory_id: str = typer.Argument(..., help="Memory ID.")) -> None:
+    settings, _ = _bootstrap()
+    row = EpisodicMemoryRepository(settings=settings).get_row(memory_id)
+    if row is None:
+        console.print(f"[red]Memory not found:[/red] {memory_id}")
+        raise typer.Exit(code=1)
+    console.print_json(json.dumps(row, indent=2, ensure_ascii=True))
 
 
 @app.command()

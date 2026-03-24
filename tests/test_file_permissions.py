@@ -23,13 +23,8 @@ def test_runtime_files_created_with_restrictive_permissions(tmp_path):
     )
 
     for path in (
-        settings.reach_out_candidates_file,
-        settings.shared_language_file,
-        settings.drift_log_file,
-        settings.consolidation_ledger_file,
-        settings.proactive_delivery_log_file,
-        settings.reflections_file,
-        settings.milestones_file,
+        settings.soul_file,
+        settings.latest_session_log_file,
     ):
         if path.exists():
             file_stat = path.stat()

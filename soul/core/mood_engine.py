@@ -3,12 +3,10 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from functools import cached_property
-from typing import Any
 
 from soul.config import Settings
-
-_LOCAL_STATE_CACHE: dict[str, dict] = {}
+from soul.memory.repositories.mood import MoodSnapshotsRepository
+from soul.persistence.sqlite_setup import ensure_schema
 
 
 @dataclass(slots=True)
@@ -20,7 +18,7 @@ class MoodSnapshot:
 
 
 class MoodEngine:
-    """Mood detection via OpenAI and Redis-backed companion state."""
+    """Mood detection via OpenAI with SQLite-backed companion state."""
 
     STATE_MAP = {
         "overwhelmed": "quiet",
@@ -34,37 +32,54 @@ class MoodEngine:
 
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or Settings()
+        ensure_schema(self.settings.database_url)
+        self.repository = MoodSnapshotsRepository(
+            self.settings.database_url,
+            user_id=self.settings.user_id,
+        )
 
-    def analyze(self, text: str, user_id: str | None = None, now: datetime | None = None) -> MoodSnapshot:
+    def analyze(
+        self,
+        text: str,
+        user_id: str | None = None,
+        now: datetime | None = None,
+        *,
+        persist: bool = True,
+        session_id: str | None = None,
+        message_id: str | None = None,
+    ) -> MoodSnapshot:
         now = now or datetime.now(timezone.utc)
         user_id = user_id or self.settings.user_id
+        if user_id != self.settings.user_id:
+            self.repository = MoodSnapshotsRepository(self.settings.database_url, user_id=user_id)
 
         user_mood, confidence, rationale = self._openai_mood(text)
-
         previous_state = self.current_state(user_id)
         if user_mood == "neutral" and not self._should_preserve_previous_state(text):
             previous_state = None
         companion_state = self._select_companion_state(user_mood, previous_state, now)
-        self._persist_state(
-            user_id=user_id,
-            payload={
-                "state": companion_state,
-                "last_user_mood": user_mood,
-                "updated_at": now.isoformat(),
-            },
-        )
-        return MoodSnapshot(
+        snapshot = MoodSnapshot(
             user_mood=user_mood,
             companion_state=companion_state,
             confidence=confidence,
             rationale=rationale,
         )
+        if persist:
+            self.repository.add_snapshot(
+                session_id=session_id,
+                message_id=message_id,
+                user_mood=snapshot.user_mood,
+                companion_state=snapshot.companion_state,
+                confidence=snapshot.confidence,
+                rationale=snapshot.rationale,
+                created_at=now.replace(microsecond=0).isoformat(),
+            )
+        return snapshot
 
     def _openai_mood(self, text: str) -> tuple[str, float, str]:
         if not self.settings.openai_api_key:
             raise RuntimeError(
-                "OPENAI_API_KEY is required for mood classification. "
-                "Set it in your .env file."
+                "OPENAI_API_KEY is required for mood classification. Set it in your .env file."
             )
 
         from openai import OpenAI
@@ -98,39 +113,25 @@ class MoodEngine:
                 raise
             payload = json.loads(raw[start:end])
         mood = str(payload.get("mood", "")).casefold()
-
         if mood not in self.STATE_MAP:
             raise ValueError(
-                f"OpenAI returned unrecognised mood label {mood!r}. "
-                f"Expected one of: {labels_str}"
+                f"OpenAI returned unrecognised mood label {mood!r}. Expected one of: {labels_str}"
             )
         confidence = float(payload.get("confidence", 0.8))
-
         return mood, confidence, f"openai mood prompt (model={self.settings.mood_openai_model})"
 
     def _should_preserve_previous_state(self, text: str) -> bool:
         return len(text.split()) <= self.settings.mood_preserve_previous_max_words
 
-    def current_state(self, user_id: str | None = None) -> dict[str, Any] | None:
-        user_id = user_id or self.settings.user_id
-        raw: str | None = None
-        if self.redis_client is not None:
-            try:
-                raw = self.redis_client.get(self._redis_key(user_id))
-            except Exception:
-                raw = None
-        if raw:
-            try:
-                return json.loads(raw)
-            except json.JSONDecodeError:
-                pass
-        cached = _LOCAL_STATE_CACHE.get(user_id)
-        return dict(cached) if cached is not None else None
+    def current_state(self, user_id: str | None = None) -> dict[str, object] | None:
+        if user_id and user_id != self.settings.user_id:
+            return MoodSnapshotsRepository(self.settings.database_url, user_id=user_id).current_state()
+        return self.repository.current_state()
 
     def _select_companion_state(
         self,
         user_mood: str,
-        previous_state: dict[str, Any] | None,
+        previous_state: dict[str, object] | None,
         now: datetime,
     ) -> str:
         if user_mood != "neutral":
@@ -139,7 +140,7 @@ class MoodEngine:
         if previous_state:
             updated_at = previous_state.get("updated_at")
             try:
-                previous_dt = datetime.fromisoformat(updated_at)
+                previous_dt = datetime.fromisoformat(str(updated_at))
             except (TypeError, ValueError):
                 previous_dt = None
             if previous_dt is not None:
@@ -148,28 +149,3 @@ class MoodEngine:
                     return str(previous_state.get("state") or "neutral")
 
         return "neutral"
-
-    def _persist_state(self, *, user_id: str, payload: dict[str, Any]) -> None:
-        serialized = json.dumps(payload, ensure_ascii=True)
-        if self.redis_client is not None:
-            try:
-                self.redis_client.set(self._redis_key(user_id), serialized)
-            except Exception:
-                _LOCAL_STATE_CACHE[user_id] = dict(payload)
-                return
-        _LOCAL_STATE_CACHE[user_id] = dict(payload)
-
-    def _redis_key(self, user_id: str) -> str:
-        return f"{self.settings.redis_key_prefix}:mood:{user_id}"
-
-    @cached_property
-    def redis_client(self):  # type: ignore[no-untyped-def]
-        try:
-            import redis
-        except ImportError:
-            return None
-
-        try:
-            return redis.Redis.from_url(self.settings.redis_url, decode_responses=True)
-        except Exception:
-            return None

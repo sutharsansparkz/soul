@@ -16,7 +16,7 @@ def _settings(tmp_path) -> Settings:  # noqa: ANN001
 def test_sqlite_fts_search_returns_ranked_candidates(tmp_path):
     settings = _settings(tmp_path)
     db.init_db(settings.database_url)
-    repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    repo = EpisodicMemoryRepository(settings=settings)
     repo.add_text(
         "launch planning for investor runway",
         emotional_tag="stressed",
@@ -44,7 +44,7 @@ def test_sqlite_fts_search_returns_ranked_candidates(tmp_path):
 def test_sqlite_fts_query_sanitization_handles_symbols(tmp_path):
     settings = _settings(tmp_path)
     db.init_db(settings.database_url)
-    repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    repo = EpisodicMemoryRepository(settings=settings)
     repo.add_text(
         "investor update with launch notes",
         emotional_tag="curious",
@@ -65,7 +65,7 @@ def test_sqlite_fts_query_sanitization_handles_symbols(tmp_path):
 def test_sqlite_fts_query_sanitization_handles_tech_terms(tmp_path):
     settings = _settings(tmp_path)
     db.init_db(settings.database_url)
-    repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    repo = EpisodicMemoryRepository(settings=settings)
     repo.add_text(
         "C++ node.js launch notes for the investor update",
         emotional_tag="neutral",

@@ -19,7 +19,7 @@ def _settings(tmp_path) -> Settings:  # noqa: ANN001
 def test_memories_list_renders_hms_score_and_tier_bars(tmp_path, monkeypatch):
     settings = _settings(tmp_path)
     db.init_db(settings.database_url)
-    episodic_repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    episodic_repo = EpisodicMemoryRepository(settings=settings)
     episodic_repo.add_text(
         "I launched the beta and felt alive.",
         emotional_tag="celebrating",
@@ -46,7 +46,7 @@ def test_memories_list_renders_hms_score_and_tier_bars(tmp_path, monkeypatch):
 def test_memories_search_uses_hms_reranked_output(tmp_path, monkeypatch):
     settings = _settings(tmp_path)
     db.init_db(settings.database_url)
-    episodic_repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    episodic_repo = EpisodicMemoryRepository(settings=settings)
     first = episodic_repo.add_text(
         "launch strategy for the investor demo",
         emotional_tag="neutral",
@@ -71,7 +71,7 @@ def test_memories_search_uses_hms_reranked_output(tmp_path, monkeypatch):
 def test_memories_search_merges_episodic_and_manual_sources(tmp_path, monkeypatch):
     settings = _settings(tmp_path)
     db.init_db(settings.database_url)
-    episodic_repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    episodic_repo = EpisodicMemoryRepository(settings=settings)
     episodic_repo.add_text(
         "launch strategy from emotional memory",
         emotional_tag="celebrating",
@@ -90,14 +90,14 @@ def test_memories_search_merges_episodic_and_manual_sources(tmp_path, monkeypatc
 
     assert result.exit_code == 0
     assert "Unified Memory Search" in result.stdout
-    assert "episodic" in result.stdout
     assert "manual" in result.stdout
+    assert "launch strategy from emotional memory" in result.stdout
 
 
 def test_memories_top_cold_and_boost_commands(tmp_path, monkeypatch):
     settings = _settings(tmp_path)
     db.init_db(settings.database_url)
-    episodic_repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    episodic_repo = EpisodicMemoryRepository(settings=settings)
     warm = episodic_repo.add_text(
         "important launch memory",
         emotional_tag="stressed",
@@ -130,7 +130,7 @@ def test_memories_clear_wipes_sql_and_episodic_memory(tmp_path, monkeypatch):
     settings = _settings(tmp_path)
     db.init_db(settings.database_url)
     db.save_memory(settings.database_url, label="manual", content="manual memory", importance=0.6)
-    episodic_repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    episodic_repo = EpisodicMemoryRepository(settings=settings)
     episodic_repo.add_text("episodic memory", importance=0.7, memory_type="moment")
 
     monkeypatch.setattr(cli, "_bootstrap", lambda: (settings, SimpleNamespace(name="Ara")))
@@ -138,6 +138,6 @@ def test_memories_clear_wipes_sql_and_episodic_memory(tmp_path, monkeypatch):
     result = CliRunner().invoke(cli.app, ["memories", "clear"])
 
     assert result.exit_code == 0
-    assert "SQL memories" in result.stdout
+    assert "SQLite-backed memories" in result.stdout
     assert db.list_memories(settings.database_url) == []
     assert db.list_episodic_memories(settings.database_url) == []

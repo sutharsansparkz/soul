@@ -15,7 +15,7 @@ def test_hms_decay_moves_old_memories_to_cold_and_is_idempotent(tmp_path):
         hms_decay_halflife_days=30.0,
     )
     db.init_db(settings.database_url)
-    repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    repo = EpisodicMemoryRepository(settings=settings)
     created = repo.add_text(
         "small weather remark from long ago",
         emotional_tag="neutral",

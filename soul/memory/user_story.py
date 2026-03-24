@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
 import hashlib
-import json
 import re
 
 
@@ -60,28 +58,6 @@ VALUE_KEYWORDS = {
     "independence": "independence",
     "curious": "curiosity",
 }
-
-
-class UserStoryRepository:
-    def __init__(self, path: str | Path):
-        self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-
-    def load(self) -> UserStory:
-        if not self.path.exists():
-            return UserStory()
-        payload = json.loads(self.path.read_text(encoding="utf-8"))
-        moments = [BigMoment(**item) for item in payload.get("big_moments", [])]
-        payload["big_moments"] = moments
-        return UserStory(**payload)
-
-    def save(self, story: UserStory) -> None:
-        payload = asdict(story)
-        self.path.write_text(json.dumps(payload, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
-        try:
-            self.path.chmod(0o600)
-        except OSError:
-            pass
 
 
 def ensure_story_defaults(story: UserStory) -> UserStory:

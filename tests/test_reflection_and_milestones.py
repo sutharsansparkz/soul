@@ -7,20 +7,21 @@ from soul import db
 from soul.config import Settings
 from soul.core.mood_engine import MoodSnapshot
 from soul.core.post_processor import PostProcessor
-from soul.evolution.reflection import ReflectionEntry, ReflectionRepository
+from soul.memory.repositories.reflections import ReflectionArtifact, ReflectionArtifactsRepository
 import soul.cli as cli
 from sqlalchemy import text
 from typer.testing import CliRunner
 
 
 def test_reflection_repository_round_trips_entries(tmp_path):
-    path = tmp_path / "nested" / "reflections.json"
-    repo = ReflectionRepository(path)
+    database_url = f"sqlite:///{(tmp_path / 'soul.db').as_posix()}"
+    db.init_db(database_url)
+    repo = ReflectionArtifactsRepository(database_url, user_id="local-user")
 
     assert repo.load() == []
 
-    first = ReflectionEntry(date="2026-03-19", summary="First reflection", insights=["slow drift", "care"])
-    second = ReflectionEntry(date="2026-03-26", summary="Second reflection", insights=["memory", "continuity"])
+    first = ReflectionArtifact(date="2026-03-19", summary="First reflection", insights=["slow drift", "care"])
+    second = ReflectionArtifact(date="2026-03-26", summary="Second reflection", insights=["memory", "continuity"])
     repo.append(first)
     repo.append(second)
 
@@ -28,7 +29,6 @@ def test_reflection_repository_round_trips_entries(tmp_path):
 
     assert [entry.summary for entry in loaded] == ["First reflection", "Second reflection"]
     assert loaded[0].insights == ["slow drift", "care"]
-    assert path.exists()
 
 
 def test_post_processor_records_milestones_and_story_updates(tmp_path):
@@ -209,13 +209,14 @@ def test_story_edit_reports_path_without_opening_an_editor(tmp_path, monkeypatch
         database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
         soul_data_path=str(tmp_path / "soul_data"),
     )
+    db.init_db(settings.database_url)
     monkeypatch.setattr(cli, "_bootstrap", lambda: (settings, SimpleNamespace(name="Ara")))
 
     result = CliRunner().invoke(cli.app, ["story", "edit"])
 
     assert result.exit_code == 0
     assert "Story file:" in result.stdout
-    assert settings.user_story_file.name in result.stdout
+    assert f"{settings.user_id}.json" in result.stdout
 
 
 def test_story_edit_uses_configured_editor(tmp_path, monkeypatch):
@@ -223,6 +224,7 @@ def test_story_edit_uses_configured_editor(tmp_path, monkeypatch):
         database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
         soul_data_path=str(tmp_path / "soul_data"),
     )
+    db.init_db(settings.database_url)
     commands: list[list[str]] = []
 
     monkeypatch.setattr(cli, "_bootstrap", lambda: (settings, SimpleNamespace(name="Ara")))
@@ -232,7 +234,7 @@ def test_story_edit_uses_configured_editor(tmp_path, monkeypatch):
     result = CliRunner().invoke(cli.app, ["story", "edit"])
 
     assert result.exit_code == 0
-    assert commands == [["custom-editor", "--wait", str(settings.user_story_file)]]
+    assert commands == [["custom-editor", "--wait", str(settings.temp_dir / f"soul-story-edit-{settings.user_id}.json")]]
 
 
 def test_post_processor_dedupes_near_identical_big_moments_by_normalized_hash(tmp_path):

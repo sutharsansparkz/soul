@@ -75,17 +75,13 @@ def test_hms_config_knobs_are_exposed():
 def test_connection_urls_are_redacted_for_cli_output():
     settings = Settings(
         database_url="postgresql://soul_user:db-secret@db.example.com:5432/soul",
-        redis_url="redis://:redis-secret@redis.example.com:6379/0",
     )
 
     payload = settings.as_redacted_dict()
 
     assert settings.redacted_database_url == "postgresql://***redacted***@db.example.com:5432/soul"
-    assert settings.redacted_redis_url == "redis://***redacted***@redis.example.com:6379/0"
     assert payload["database_url"] == settings.redacted_database_url
-    assert payload["redis_url"] == settings.redacted_redis_url
     assert "db-secret" not in str(payload["database_url"])
-    assert "redis-secret" not in str(payload["redis_url"])
 
 
 def test_empty_secret_values_are_safe_for_config_json_output():

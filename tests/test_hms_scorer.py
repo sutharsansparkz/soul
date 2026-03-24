@@ -84,7 +84,7 @@ def test_add_text_uses_importance_as_emotional_override(tmp_path):
         soul_data_path=str(tmp_path / "soul_data"),
     )
     db.init_db(settings.database_url)
-    repo = EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings)
+    repo = EpisodicMemoryRepository(settings=settings)
 
     record = repo.add_text(
         "neutral memory that should still be important",

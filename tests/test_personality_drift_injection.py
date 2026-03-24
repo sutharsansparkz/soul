@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-import json
-
 from soul import db
 from soul.config import Settings
 from soul.core.context_builder import ContextBuilder
 from soul.core.mood_engine import MoodSnapshot
 from soul.core.soul_loader import Soul
 from soul.memory.episodic import EpisodicMemoryRepository
-from soul.memory.user_story import UserStoryRepository
+from soul.memory.repositories.personality import PersonalityStateRepository
+from soul.memory.repositories.user_facts import UserFactsRepository
 
 
 def _soul() -> Soul:
@@ -31,18 +30,17 @@ def test_personality_context_injected_when_drifted(tmp_path):
         soul_data_path=str(tmp_path / "soul_data"),
     )
     db.init_db(settings.database_url)
-    settings.personality_file.parent.mkdir(parents=True, exist_ok=True)
-    settings.personality_file.write_text(
-        json.dumps(
-            {
-                "humor_intensity": 0.68,
-                "response_length": 0.50,
-                "curiosity_depth": 0.50,
-                "directness": 0.50,
-                "warmth_expression": 0.32,
-            }
-        ),
-        encoding="utf-8",
+    PersonalityStateRepository(settings.database_url, user_id=settings.user_id).record_state(
+        {
+            "humor_intensity": 0.68,
+            "response_length": 0.50,
+            "curiosity_depth": 0.50,
+            "directness": 0.50,
+            "warmth_expression": 0.32,
+        },
+        resonance_signals={},
+        notes="seed",
+        source="test",
     )
 
     session_id = db.create_session(settings.database_url, "Ara")
@@ -62,18 +60,17 @@ def test_personality_context_omitted_when_at_baseline(tmp_path):
         soul_data_path=str(tmp_path / "soul_data"),
     )
     db.init_db(settings.database_url)
-    settings.personality_file.parent.mkdir(parents=True, exist_ok=True)
-    settings.personality_file.write_text(
-        json.dumps(
-            {
-                "humor_intensity": 0.5,
-                "response_length": 0.5,
-                "curiosity_depth": 0.5,
-                "directness": 0.5,
-                "warmth_expression": 0.5,
-            }
-        ),
-        encoding="utf-8",
+    PersonalityStateRepository(settings.database_url, user_id=settings.user_id).record_state(
+        {
+            "humor_intensity": 0.5,
+            "response_length": 0.5,
+            "curiosity_depth": 0.5,
+            "directness": 0.5,
+            "warmth_expression": 0.5,
+        },
+        resonance_signals={},
+        notes="seed",
+        source="test",
     )
 
     session_id = db.create_session(settings.database_url, "Ara")
@@ -84,7 +81,7 @@ def test_personality_context_omitted_when_at_baseline(tmp_path):
     assert "[personality_drift]" not in bundle.system_prompt
 
 
-def test_personality_context_omitted_when_file_missing(tmp_path):
+def test_personality_context_omitted_when_no_personality_state_exists(tmp_path):
     settings = Settings(
         database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
         soul_data_path=str(tmp_path / "soul_data"),
@@ -105,25 +102,25 @@ def test_personality_context_appears_after_story_before_memories(tmp_path):
         soul_data_path=str(tmp_path / "soul_data"),
     )
     db.init_db(settings.database_url)
-    settings.personality_file.parent.mkdir(parents=True, exist_ok=True)
-    settings.personality_file.write_text(
-        json.dumps(
-            {
-                "humor_intensity": 0.70,
-                "response_length": 0.5,
-                "curiosity_depth": 0.5,
-                "directness": 0.5,
-                "warmth_expression": 0.5,
-            }
-        ),
-        encoding="utf-8",
+    PersonalityStateRepository(settings.database_url, user_id=settings.user_id).record_state(
+        {
+            "humor_intensity": 0.70,
+            "response_length": 0.5,
+            "curiosity_depth": 0.5,
+            "directness": 0.5,
+            "warmth_expression": 0.5,
+        },
+        resonance_signals={},
+        notes="seed",
+        source="test",
     )
 
-    story = UserStoryRepository(settings.user_story_file).load()
+    story_repo = UserFactsRepository(settings.database_url, user_id=settings.user_id)
+    story = story_repo.load_story()
     story.current_chapter["summary"] = "They are carrying a lot."
-    UserStoryRepository(settings.user_story_file).save(story)
+    story_repo.save_story(story, source="test")
 
-    EpisodicMemoryRepository(settings.episodic_memory_file, settings=settings).add_text(
+    EpisodicMemoryRepository(settings=settings).add_text(
         "hello there",
         metadata={"user_id": settings.user_id, "timestamp": "2026-03-19T10:00:00+00:00"},
     )

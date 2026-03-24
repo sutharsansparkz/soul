@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from soul.config import Settings
 from soul.memory.user_story import UserStory
-from soul.tasks.proactive import build_reach_out_candidates
+from soul.maintenance.proactive import build_reach_out_candidates
 
 
 def test_build_reach_out_candidates_emits_all_required_triggers():

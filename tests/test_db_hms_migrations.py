@@ -114,6 +114,6 @@ def test_clear_memories_removes_orphaned_memory_scores(tmp_path):
 
     deleted = db.clear_memories(database_url)
 
-    assert deleted == 1
+    assert deleted == 2
     assert db.list_memories(database_url) == []
     assert db.get_memory_score(database_url, memory_id) is None

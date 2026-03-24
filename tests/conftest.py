@@ -74,7 +74,6 @@ def live_llm_runtime_settings(tmp_path, live_llm_provider_settings: Settings) ->
         mood_openai_temperature=0.0,
         database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
         soul_data_path=str(soul_data_dir),
-        redis_url="redis://localhost:6399/0",
         user_id="live-llm-test-user",
         timezone_name="UTC",
     )

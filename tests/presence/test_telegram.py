@@ -17,7 +17,8 @@ def test_disabled_telegram_client_degrades_cleanly():
 
     assert result.ok is False
     assert result.error == "missing bot token"
-    assert client.get_updates() == []
+    with pytest.raises(RuntimeError, match="Telegram client is not configured"):
+        client.get_updates()
 
 
 def test_telegram_client_uses_payload_and_opener():
@@ -99,7 +100,7 @@ def test_telegram_client_returns_not_ok_when_api_returns_ok_false():
     assert result.error == "telegram_error: Bad Request"
 
 
-def test_telegram_client_get_updates_warns_and_returns_empty_on_api_error():
+def test_telegram_client_get_updates_raises_on_api_error():
     class Response:
         def __enter__(self):
             return self
@@ -115,10 +116,8 @@ def test_telegram_client_get_updates_warns_and_returns_empty_on_api_error():
 
     client = TelegramClient(token="abc123", opener=opener)
 
-    with pytest.warns(UserWarning, match="Telegram get_updates failed: Unauthorized"):
-        updates = client.get_updates()
-
-    assert updates == []
+    with pytest.raises(RuntimeError, match="Telegram get_updates failed: Unauthorized"):
+        client.get_updates()
 
 
 def test_bot_runner_parses_updates():
@@ -189,11 +188,11 @@ def test_telegram_client_raises_urlerror_on_timeout():
 
     client = TelegramClient(token="abc123", opener=timeout_opener, timeout=5)
     result = client.send_message(42, "hello")
-    updates = client.get_updates(timeout=5)
 
     assert result.ok is False
     assert result.error is not None
-    assert updates == []
+    with pytest.raises(RuntimeError, match="Telegram get_updates failed"):
+        client.get_updates(timeout=5)
 
 
 def test_telegram_client_returns_not_ok_on_json_decode_error():
@@ -219,7 +218,7 @@ def test_telegram_client_returns_not_ok_on_json_decode_error():
     assert "Expecting property name enclosed in double quotes" in result.error
 
 
-def test_bot_runner_continues_after_get_updates_failure(monkeypatch):
+def test_bot_runner_stops_on_get_updates_failure(monkeypatch):
     calls = {"count": 0}
     runner = TelegramBotRunner(
         runtime=SimpleNamespace(handle_text=lambda *args, **kwargs: SimpleNamespace(reply_text="hi")),
@@ -228,13 +227,11 @@ def test_bot_runner_continues_after_get_updates_failure(monkeypatch):
 
     def flaky_get_updates(*args, **kwargs):  # noqa: ANN001, ARG001
         calls["count"] += 1
-        if calls["count"] == 1:
-            raise ConnectionError("temporary network failure")
-        raise SystemExit
+        raise ConnectionError("temporary network failure")
 
     monkeypatch.setattr(runner.telegram, "get_updates", flaky_get_updates)
 
-    with pytest.raises(SystemExit):
+    with pytest.raises(ConnectionError, match="temporary network failure"):
         runner.run_forever(poll_interval=0)
 
-    assert calls["count"] >= 2
+    assert calls["count"] == 1
