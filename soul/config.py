@@ -116,7 +116,6 @@ class Settings(BaseSettings):
     mood_decay_hours: int = Field(default=18, alias="MOOD_DECAY_HOURS")
     mood_preserve_previous_max_words: int = Field(default=4, alias="MOOD_PRESERVE_PREVIOUS_MAX_WORDS")
     raw_retention_days: int = Field(default=90, alias="RAW_RETENTION_DAYS")
-    redis_key_prefix: str = Field(default="soul", alias="REDIS_KEY_PREFIX")
     chat_pending_reach_out_limit: int = Field(default=1, alias="CHAT_PENDING_REACH_OUT_LIMIT")
     presence_stress_window_days: int = Field(default=14, alias="PRESENCE_STRESS_WINDOW_DAYS")
     presence_milestone_scan_limit: int = Field(default=200, alias="PRESENCE_MILESTONE_SCAN_LIMIT")

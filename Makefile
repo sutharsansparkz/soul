@@ -1,21 +1,7 @@
 SHELL := /bin/sh
 
-.PHONY: build up down logs shell test docker-test lint
+.PHONY: test lint
 
-build:
-	docker compose build app worker beat test
-
-up:
-	docker compose up -d app worker beat redis
-
-down:
-	docker compose down -v
-
-logs:
-	docker compose logs -f app worker beat redis
-
-shell:
-	docker compose run --rm app
 
 test:
 	@PYTHON_BIN=""; \
@@ -38,8 +24,7 @@ test:
 	fi; \
 	$$PYTHON_BIN -m pytest -q
 
-docker-test:
-	sh ./scripts/docker-test.sh
+
 
 lint:
 	@PYTHON_BIN=""; \
@@ -57,4 +42,4 @@ lint:
 		exit 1; \
 	fi; \
 	mkdir -p .pycache; \
-	PYTHONPYCACHEPREFIX=.pycache $$PYTHON_BIN -m compileall soul scripts
+	PYTHONPYCACHEPREFIX=.pycache $$PYTHON_BIN -m compileall soul

@@ -1,50 +1,137 @@
 # Modules
 
-## `soul/cli.py`
+## Top-Level Entry Points
 
-- Typer entrypoint.
-- Owns chat REPL, memory/story/evolution/status/admin commands.
-- Integrates Rich live streaming for assistant output.
+- `soul/cli.py`: Typer application, chat REPL, memory and story commands,
+  maintenance commands, status output, and debug surfaces.
+- `soul/config.py`: Pydantic settings model, path helpers, and redacted config
+  export.
+- `soul/db.py`: compatibility-oriented database helper facade used by tests and
+  some command paths.
+- `scripts/`: operational wrappers and compatibility scripts such as
+  `migrate_postgres.py`, `worker.py`, and `beat.py`.
 
-## `soul/core/`
+## Package Map
 
-- `soul_loader.py`: loads/validates soul YAML and compiles immutable prompt.
-- `llm_client.py`: provider abstraction + streaming + offline fallback.
-- `mood_engine.py`: mood classification and Redis-backed companion state.
-- `context_builder.py`: assembles prompt context (mood/story/memory/recent messages).
-- `post_processor.py`: story updates, milestones, shared language, turn/session memory extraction.
+### `soul/bootstrap/`
 
-## `soul/memory/`
+Startup and validation helpers.
 
-- `fts.py`: SQLite FTS5 index helpers and FTS query helpers.
-- `embedder.py`: optional local sentence-transformers embedding helper.
-- `episodic.py`: repository for episodic writes/retrieval/top/cold/boost/decay/clear.
-- `scorer.py`: HMS formulas, temporal decay, and tier transitions.
-- `retriever.py`: top-candidate retrieval (FTS top-20) + semantic/HMS rerank + retrieval-time score updates.
-- `vector_store.py`: local JSONL-backed fallback store used alongside the SQLite memory path.
-- `user_story.py`: user story schema/repository and heuristic extraction.
-- `shared_language.py`: recurring phrase tracking.
+- `validator.py` checks schema availability, provider config, timezone validity,
+  feature-specific requirements, and obsolete legacy files.
+- `feature_registry.py` defines the feature-flag registry used at startup.
+- `errors.py` centralizes runtime-specific exception types.
+- `logging.py` and `config.py` provide bootstrap-level helpers.
 
-## `soul/evolution/`
+### `soul/conversation/`
 
-- `drift_engine.py`: bounded weekly personality drift.
-- `milestone_tracker.py`: milestone persistence.
-- `reflection.py`: monthly reflection generation.
+Turn orchestration glue for the main runtime.
 
-## `soul/tasks/`
+- `orchestrator.py` owns the read/generate/write flow and stored turn traces.
+- `context_loader.py` wraps context assembly.
+- `extractor.py`, `prompt_builder.py`, `post_processor.py`, and `responder.py`
+  are supporting modules that keep the orchestration layer segmented.
 
-- `consolidate.py`: consolidation pipeline + archive/purge retention.
-- `hms_decay.py`: nightly HMS decay orchestration.
-- `drift_weekly.py`: weekly drift task + resonance signal derivation.
-- `proactive.py`: proactive trigger candidate generation + deduped delivery.
+### `soul/core/`
 
-## `soul/presence/`
+Core runtime behavior that every surface depends on.
 
-- `runtime.py`: bridges presence surfaces into the core runtime while preserving prompt/memory/post-processing flow.
-- `telegram.py`: Telegram polling/send adapter with single-chat enforcement.
-- `voice.py`: optional STT/TTS/recording bridge with graceful degradation when dependencies are absent.
+- `soul_loader.py` loads `soul.yaml` and compiles the immutable system prompt.
+- `context_builder.py` assembles mood, story, drift, memory, and history into
+  one prompt bundle.
+- `llm_client.py` talks to OpenAI-compatible chat providers and supports
+  streaming responses.
+- `mood_engine.py` classifies user mood and derives companion state.
+- `post_processor.py` updates story facts, milestones, recurring phrases, and
+  memory records after each turn.
+- `presence_context.py` derives proactive and status context from stored data.
 
-## `soul/db.py`
+### `soul/llm/`
 
-- DB bootstrap and data-access helpers for sessions, messages, milestones, memories, HMS score rows.
-- Maintains additive schema initialization for compatibility, including FTS + session export progress.
+LLM-related helper types and parsers.
+
+- `client.py`, `schemas.py`, and `parsers.py` provide supporting abstractions
+  around provider payloads and structured parsing.
+
+### `soul/maintenance/`
+
+One-shot maintenance and background-job logic.
+
+- `jobs.py` is the current main entrypoint for maintenance execution.
+- `consolidation.py` processes completed sessions and extracts structured
+  insights.
+- `decay.py` recomputes HMS memory state.
+- `drift.py` derives resonance signals and writes bounded personality updates.
+- `reflection.py` stores reflection artifacts.
+- `proactive.py` refreshes and optionally delivers reach-out candidates.
+
+### `soul/memory/`
+
+Memory and user-story domain logic.
+
+- `episodic.py` exposes the SQLite-backed episodic-memory repository.
+- `scorer.py` defines HMS components, decay, tiers, and composite scoring.
+- `retriever.py` and `retrieval/` implement ranking and hybrid retrieval logic.
+- `embedder.py` optionally adds local sentence-transformer embeddings.
+- `user_story.py` defines the in-memory `UserStory` model and extraction rules.
+- `shared_language.py` contains recurring phrase logic.
+- `vector_store.py` defines the shared record format and memory block rendering.
+
+### `soul/memory/repositories/`
+
+Database-backed repositories for runtime entities.
+
+- `messages.py` handles sessions and message history.
+- `user_facts.py` reconstructs and persists the user story.
+- `episodic.py` persists episodic memories and applies retrieval boosts.
+- `mood.py`, `milestones.py`, `personality.py`, `reflections.py`,
+  `proactive.py`, and `maintenance.py` handle their corresponding entities.
+- `app_settings.py` and `shared_language.py` support lightweight state storage.
+
+### `soul/observability/`
+
+Inspection and tracing helpers.
+
+- `traces.py` stores and retrieves turn traces.
+- `debug.py`, `diagnostics.py`, and `metrics.py` group supporting observability
+  helpers.
+
+### `soul/persistence/`
+
+Low-level SQLite access and schema management.
+
+- `db.py` owns engine creation and connection helpers.
+- `sqlite_setup.py` creates tables, indexes, and FTS triggers.
+- `models.py` stores lightweight persistence-oriented structures.
+
+### `soul/presence/`
+
+Adapters for non-CLI interaction surfaces.
+
+- `runtime.py` exposes `PresenceRuntime`, the shared single-turn integration
+  surface.
+- `telegram.py` implements polling, single-chat enforcement, and message send
+  logic.
+- `voice.py` handles recording, transcription, synthesis, and playback.
+
+### `soul/state/`
+
+Pure state helpers and bounded-drift rules.
+
+- `drift.py` defines the baseline personality dimensions and weekly update rule.
+- `mood.py`, `milestones.py`, and `personality.py` group lightweight state
+  helpers.
+
+## Tests
+
+The `tests/` tree is contract-heavy and covers:
+
+- CLI surface and runtime behavior
+- fail-fast startup rules
+- HMS scoring and retrieval
+- story extraction and milestone generation
+- presence adapters
+- security and safety guards around persistence helpers
+
+When the code and docs disagree, the tests are usually the best indicator of
+the intended contract.

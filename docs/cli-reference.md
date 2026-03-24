@@ -1,48 +1,112 @@
 # CLI Reference
 
-## Core
+Installed entrypoint:
 
-- `soul chat`
-- `soul chat` shows a compact per-turn trace (`inside <name> ...`) before the reply and streams the assistant response token-by-token in the terminal
-- `soul chat --voice`
-- `soul chat --voice-input "path.wav"`
-- `soul chat --record-seconds 5`
-- `soul chat --replay`
+```bash
+soul
+```
 
-## Memory
+Development equivalent:
 
-- `soul memories` (HMS-ranked list with score bars and tiers)
-- `soul memories search "query"` (unified search across episodic + manual memories, reranked with HMS weighting)
-- `soul memories top` (top 10 vivid memories)
-- `soul memories cold` (cold-tier memory list)
-- `soul memories boost "query"` (manual HMS flag/boost)
-- `soul memories clear` (wipes SQL + episodic + optional vector-backed memory state)
+```bash
+python -m soul.cli
+```
 
-## Profile
+## Bootstrap And Introspection
 
-- `soul story`
-- `soul story edit`
+```bash
+soul db init
+soul db rebuild-fts
+soul config
+soul version
+```
 
-## Evolution
+- `soul db init` creates runtime directories and initializes the SQLite schema.
+- `soul db rebuild-fts` rebuilds the episodic-memory FTS5 index.
+- `soul config` prints redacted runtime settings as JSON.
+- `soul version` prints the installed version string.
 
-- `soul drift`
-- `soul milestones`
+## Chat
 
-## Status
+```bash
+soul chat
+soul chat --replay
+soul chat --voice
+soul chat --voice-input sample.wav --voice
+soul chat --record-seconds 5 --voice
+```
 
-- `soul status`
-- `soul telegram-bot` (requires `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`)
+Notes:
 
-## Admin
+- `soul chat` streams replies directly in the terminal.
+- The chat UI prints a compact turn trace before each reply.
+- `--voice` is feature-gated by `ENABLE_VOICE=true`.
+- `--voice-input` and `--record-seconds` use the same voice bridge as the live
+  voice mode.
 
-- `soul run-jobs`
-- `soul db init`
-- `soul config`
+## Story And Memory
 
-## In-Session Commands
+```bash
+soul memories
+soul memories search "launch plan"
+soul memories top
+soul memories cold
+soul memories boost "late night coding"
+soul memories clear
 
-- `/quit`
-- `/save "note"`
-- `/mood`
-- `/story`
-- `/voice on | off`
+soul story
+soul story edit
+```
+
+- `soul memories` shows stored memories ranked by HMS score.
+- `soul memories search` shows reranked episodic-memory matches.
+- `soul memories boost` flags the best matching memory and increases its score.
+- `soul story` prints the reconstructed user story.
+- `soul story edit` exports the story to a temp JSON file and reimports edits.
+
+## Status, Drift, And Maintenance
+
+```bash
+soul status
+soul drift
+soul milestones
+soul run-jobs
+soul telegram-bot
+```
+
+- `soul status` summarizes counts, mood, reach-out candidates, and feature
+  state.
+- `soul drift` shows recorded personality-state history.
+- `soul milestones` shows the relationship timeline.
+- `soul run-jobs` executes the enabled maintenance pipeline once.
+- `soul telegram-bot` starts polling Telegram for the configured allowed chat.
+
+## Debug
+
+```bash
+soul debug last-turn
+soul debug show-mood
+soul debug show-facts
+soul debug show-memories --limit 25
+soul debug show-personality --limit 10
+soul debug show-trace <trace-id>
+soul debug explain-memory <memory-id>
+```
+
+All `debug` commands print JSON.
+
+## In-Session Slash Commands
+
+Inside `soul chat`:
+
+```text
+/quit
+/save note text
+/mood
+/story
+/voice on
+/voice off
+```
+
+- `/save` stores a manual memory note for the current session.
+- `/voice on` and `/voice off` only work when voice support is enabled.

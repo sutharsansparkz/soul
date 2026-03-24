@@ -1,23 +1,32 @@
-# SOUL Documentation
+# Documentation
 
-This directory documents the implemented SOUL CLI runtime and its production-facing behavior.
+These docs describe the current SOUL runtime as it exists in this repository
+today: a SQLite-first, terminal-first companion system with optional Telegram
+and voice surfaces.
 
-## Core references
+## Start Here
 
-- `docs/architecture.md`: runtime architecture, request/data flow, and background jobs.
-- `docs/modules.md`: package/module map with ownership and responsibilities.
-- `docs/api.md`: command and runtime interfaces (CLI + in-session command contract).
-- `docs/cli-reference.md`: quick command reference.
-- `docs/memory-schema.md`: persisted memory/profile schema, HMS scoring model, and retrieval behavior.
-- `docs/drift-algorithm.md`: weekly personality drift constraints and update logic.
-- `docs/soul-design.md`: high-level design principles and non-negotiables.
-- `docs/testing.md`: test coverage and execution path.
+- `README.md` for first-time setup and project overview
+- `docs/cli-reference.md` for the fastest way to find commands
+- `docs/testing.md` if you are contributing or validating changes
 
-## Operational notes
+## Core Runtime Docs
 
-- Local bootstrap: initialize DB with `soul db init`, then start with `soul chat`.
-- Local Python runtime: use Python `3.11+`.
-- Background jobs: `celery -A soul.tasks worker --loglevel=info` and `celery -A soul.tasks beat --loglevel=info`.
-- Containerized stack: `docker compose up -d app worker beat redis`.
-- Telegram surface: configure both `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`; updates from other chats are ignored.
-- Default persistence is SQLite + Redis. Legacy compatibility dependencies live behind `pip install -e '.[legacy]'`.
+- `docs/architecture.md` explains startup, turn flow, presence surfaces, and
+  maintenance jobs.
+- `docs/modules.md` maps the current package layout and major responsibilities.
+- `docs/api.md` describes the public CLI and Python integration surfaces.
+- `docs/memory-schema.md` documents the SQLite persistence model, HMS scoring,
+  and retrieval behavior.
+
+## Design Docs
+
+- `docs/soul-design.md` explains the soul document contract and design
+  principles.
+- `docs/drift-algorithm.md` explains how bounded personality drift works.
+
+## Scope Note
+
+The repo still contains some older compatibility and deployment scaffolding.
+Where that differs from the main runtime, these docs favor the current,
+tested CLI plus SQLite workflow rather than the older paths.

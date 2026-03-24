@@ -1,87 +1,183 @@
-# Memory and Profile Schema
+# Memory And Persistence Schema
 
-## `user_story.json`
+## Canonical Storage Model
 
-Top-level shape:
+The current SOUL runtime stores state in SQLite, not in long-lived JSON state
+files. Story facts, episodic memories, milestones, reflections, proactive
+candidates, and turn traces all live in the database.
+
+Startup validation explicitly rejects obsolete legacy files such as
+`user_story.json`, `personality.json`, and `shared_language.json` when they are
+found in `SOUL_DATA_DIR`.
+
+## Reconstructed User Story
+
+The user story is reconstructed from `user_facts` rows and exposed as the
+`UserStory` shape used by `soul story` and `soul story edit`.
+
+Top-level story fields:
 
 - `user_id`
 - `updated_at`
-- `basics` (`name`, `location`, `occupation`, optional `birthday`)
-- `current_chapter` (`summary`, `active_goals`, `active_fears`, `current_mood_trend`)
+- `basics`
+- `current_chapter`
 - `big_moments`
-- optional `upcoming_events` (dated entries)
+- `upcoming_events`
 - `relationships`
 - `values_observed`
 - `triggers`
 - `things_they_love`
 
-Backward compatibility: missing optional keys are defaulted during load.
-Database bootstrap also performs additive HMS column migrations for legacy SQLite/PostgreSQL rows.
+Important nested fields:
 
-## `episodic_memory` table
+- `basics`: `name`, `location`, `occupation`, optional `birthday`
+- `current_chapter`: `summary`, `active_goals`, `active_fears`,
+  `current_mood_trend`
+- `big_moments`: dated major life events with emotional weight metadata
 
-SQLite is the canonical store for episodic memory. The local JSONL/vector store is a fallback cache surface and may be missing entries if a cache write fails after the SQL write succeeds.
+`soul story edit` exports this shape to a temporary JSON file, then imports the
+edited payload back into `user_facts`.
 
-- `id` (pk)
+## Core Relational Tables
+
+General runtime tables:
+
+- `users`
+- `sessions`
+- `messages`
+- `maintenance_runs`
+- `turn_traces`
+
+Relational context tables:
+
+- `user_facts`
+- `shared_language_entries`
+- `milestones`
+- `personality_state`
+- `reflection_artifacts`
+- `proactive_candidates`
+
+## `episodic_memories`
+
+`episodic_memories` is the canonical store for long-term conversational memory.
+
+Important columns:
+
+- `id`
 - `user_id`
 - `session_id`
-- `timestamp`
+- `label`
 - `content`
 - `emotional_tag`
 - `memory_type`
+- `source`
+- `created_at`
+- `updated_at`
+- `observed_at`
 - `word_count`
 - `flagged`
 - `ref_count`
-- `tier` (`vivid|present|fading|cold`)
-- `embedding` (`BLOB`, optional local sentence-transformers vector)
-
-Note: the default cold threshold is 0.05 (configurable via HMS_COLD_THRESHOLD). The score ranges above reflect this default.
-
-## `memory_fts` virtual table (SQLite FTS5)
-
-- indexed fields: `content`, `emotional_tag`, `memory_type`
-- linked to `episodic_memory` via `content_rowid`
-- maintained by insert/update/delete triggers
-
-## `memory_scores` table
-
-- `memory_id` (pk, fk -> `episodic_memory.id`)
-- `user_id`
-- `score_emotional` (E)
-- `score_retrieval` (R)
-- `score_temporal` (T)
-- `score_flagged` (F)
-- `score_volume` (U)
-- `hms_score` (composite)
+- `tier`
+- `score_emotional`
+- `score_retrieval`
+- `score_temporal`
+- `score_flagged`
+- `score_volume`
+- `hms_score`
 - `last_computed`
 - `last_retrieved`
 - `decay_rate`
+- `embedding`
+- `metadata_json`
+
+Tier meanings:
+
+- `vivid`: highly retrievable and emotionally salient
+- `present`: active long-term context
+- `fading`: still retained but lower-priority
+- `cold`: retained but excluded from passive retrieval
+
+Default thresholds:
+
+- cold: below `HMS_COLD_THRESHOLD` (default `0.05`)
+- vivid: `>= 0.75`
+- present: `>= 0.40`
+- fading: everything else above the cold threshold
+
+## HMS Scoring
+
+The Human Memory Scoring model uses five normalized components:
+
+- emotional intensity
+- retrieval count
+- temporal recency
+- manual flagging
+- memory volume
 
 Composite formula:
 
-`S = E*0.35 + R*0.25 + T*0.20 + F*0.10 + U*0.10`
+`hms_score = E*0.35 + R*0.25 + T*0.20 + F*0.10 + U*0.10`
 
-Retrieval blend formula:
+Important details:
 
-`final_score = semantic_score*0.55 + hms_score*0.45`
+- `score_retrieval` grows with `log1p(ref_count)` and asymptotically approaches
+  `1.0`.
+- `score_temporal` decays exponentially using `HMS_DECAY_HALFLIFE_DAYS`.
+- `score_flagged` becomes `1.0` when a memory is manually boosted.
+- `score_volume` saturates around 120 words.
 
-Retrieval-time update contract:
+## FTS And Retrieval
 
-- increment `ref_count` (`R++`)
-- recompute HMS composite + tier
-- persist score/tier metadata to SQL storage
+SQLite FTS5 powers the first retrieval stage through the
+`episodic_memories_fts` virtual table.
 
-## `drift_log` table
+FTS-indexed fields:
 
-- `id`
-- `run_date`
-- `dimensions_before`
-- `dimensions_after`
-- `resonance_signals`
-- `notes`
+- `label`
+- `content`
+- `emotional_tag`
+- `memory_type`
 
-## Retention and archival
+The FTS table is linked to `episodic_memories` through insert, update, and
+delete triggers, so it stays in sync automatically.
 
-- raw session messages are archived to `soul_data/logs/archive/*.jsonl`
-- default retention is 90 days (`RAW_RETENTION_DAYS`)
-- purge occurs only after archive write succeeds
+Retrieval flow:
+
+1. Fetch up to `MEMORY_CANDIDATE_K` FTS matches.
+2. Normalize BM25 scores into a `0..1` semantic similarity signal.
+3. Optionally blend in local embedding cosine similarity when
+   `HYBRID_EMBEDDINGS=true`.
+4. Compute final rank:
+
+`rank = semantic_similarity * HMS_SEMANTIC_WEIGHT + hms_score * HMS_SCORE_WEIGHT`
+
+When hybrid embeddings are enabled, the semantic term becomes a blend of
+normalized BM25 and cosine similarity before the final HMS weighting is applied.
+
+Retrieval-time side effects:
+
+- increment `ref_count`
+- recompute HMS components
+- update `last_retrieved`
+- refresh tier and stored score fields
+
+Passive retrieval excludes cold memories. Explicit search commands can include
+them.
+
+## Related Context Tables
+
+- `user_facts`: normalized storage for story reconstruction
+- `shared_language_entries`: recurring phrases and their meanings
+- `milestones`: relationship events such as anniversaries, streaks, and major
+  life moments
+- `personality_state`: recorded drift snapshots and resonance signals
+- `reflection_artifacts`: stored reflection summaries plus structured insights
+- `proactive_candidates`: queued or delivered reach-out candidates
+- `turn_traces`: stored per-turn diagnostics and prompt metadata
+
+## Compatibility Notes
+
+The repo still contains older helper paths and cleanup logic for tables such as
+`memories`, `memory_scores`, and `episodic_memory`. They remain useful for
+compatibility and tests, but the main runtime writes and reads through
+`episodic_memories` and the repository layer built around it.

@@ -1,41 +1,99 @@
-# Testing Strategy
+# Testing
 
-The project uses contract-style tests to keep the CLI/runtime behavior aligned with `pr.txt`.
+## Testing Philosophy
 
-## Local Path
+SOUL relies on contract-style tests more than golden snapshots of internal
+implementation details. Most tests create temporary SQLite databases and assert
+user-visible behavior:
 
-For local runs, install the test extra from `pyproject.toml` so `pytest` is available:
+- command surfaces
+- fail-fast startup rules
+- persistence contracts
+- retrieval ranking and score updates
+- story extraction and milestone generation
+- presence surface behavior
+- file-permission and safety expectations
+
+That makes the suite a good source of truth when old docs drift.
+
+## Local Test Setup
+
+Install the package with dev dependencies:
 
 ```bash
-pip install -e '.[dev]'
+pip install -e ".[dev]"
 ```
 
-The local Make targets expect Python `3.11+`.
+Python `3.11+` is required.
 
-`requirements.txt` tracks runtime dependencies only, so it may not include test tooling.
+Useful commands:
 
-`make test` runs the suite as `python -m pytest -q`, which matches the Makefile's module-based invocation.
+```bash
+make test
+make lint
+python -m pytest -q
+```
 
-The current suite focuses on:
+Notes:
 
-- soul document structure and prompt compilation expectations
-- drift caps and weekly adjustment rules
-- user story schema shape
-- CLI command surface
-- persona regression fixtures (20+ deterministic conversation turns)
-- HMS scoring formula, retriever reranking, and nightly decay idempotency
-- SQLite FTS schema/search contracts and legacy migration compatibility
-- unified memory search/clear CLI contracts and retrieval update behavior
-- consolidation retention safety and settings-aware persistence behavior
+- `make test` verifies Python 3.11+, checks that `pytest` is installed, and
+  runs `python -m pytest -q`.
+- `make lint` currently runs `compileall` against `soul/` and `scripts/`. It is
+  a syntax/import sanity check, not a formatter or style linter.
+- `requirements.txt` contains runtime dependencies only, so it does not replace
+  the editable dev install for contributors.
 
-These tests are intentionally deterministic so they can run in CI without network-dependent model calls.
+## High-Value Test Areas
 
-## Dockerized Path
+The current test suite covers:
 
-The production-oriented scaffold also exposes the same validation inside Docker:
+- soul document loading and prompt compilation
+- startup validation and fail-fast architecture rules
+- CLI command contract and chat UX
+- local runtime shortcuts and streaming behavior
+- HMS scoring, decay, retrieval ranking, and FTS integration
+- user-story extraction and story editing flows
+- milestone generation, reflections, and proactive reach-out logic
+- Telegram, voice, and presence-runtime behavior
+- config redaction, timezone handling, and file permissions
+- SQL safety guards and compatibility helper behavior
+
+## Focused Test Runs
+
+Examples:
+
+```bash
+python -m pytest -q tests/test_cli_contract.py
+python -m pytest -q tests/test_runtime_pipeline.py
+python -m pytest -q tests/test_hms_retriever.py
+python -m pytest -q tests/presence/test_telegram.py
+```
+
+These are useful when you are changing one area and want faster iteration than a
+full-suite run.
+
+## Live Provider Tests
+
+Some tests are marked `live_llm` and are intended for explicit provider-backed
+validation. They should only be run when you want a real networked check.
+
+Example:
+
+```bash
+python -m pytest -q -m live_llm
+```
+
+Because they depend on real credentials and network availability, they should
+not be treated as the default local test path.
+
+## Docker Test Path
+
+The repo also exposes:
 
 ```bash
 make docker-test
 ```
 
-`make docker-test` wraps `scripts/docker-test.sh`, which builds the test image, starts `redis`, and runs the suite in the `test` service against the default SQLite-backed runtime. Docker Desktop or Docker Engine must be installed, and the Docker CLI must be on `PATH`, for that path to work.
+This path uses the bundled Docker test scaffold. It can still be useful, but
+the primary contributor workflow described in the docs is the local Python plus
+SQLite path.
