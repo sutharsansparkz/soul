@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.2.0 (2026-03-25)
+
+### Features
+
+- Enhance error handling in LLM interactions and add license file
+  ([`fab0d20`](https://github.com/sparkz-technology/soul/commit/fab0d2001c22a803adbcb3247dd27073d58bcf36))
+
+
 ## v0.1.0 (2026-03-25)
 
 ### Bug Fixes
@@ -46,6 +54,9 @@ Co-authored-by: Ona <no-reply@ona.com>
 
 - Update GitHub Actions to use latest versions of checkout and setup-python
   ([`045a8ca`](https://github.com/sparkz-technology/soul/commit/045a8ca6ab3315de64516e692dcd2ba1e8b4f1cd))
+
+- **release**: 0.1.0 [skip ci]
+  ([`a8009c0`](https://github.com/sparkz-technology/soul/commit/a8009c09cac2cb2d4509d29efb9ea0be605dfea5))
 
 ### Features
 
