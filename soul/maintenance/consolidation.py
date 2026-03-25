@@ -17,7 +17,7 @@ from soul.memory.repositories.messages import MessagesRepository
 from soul.memory.repositories.shared_language import SharedLanguageRepository
 from soul.memory.repositories.user_facts import UserFactsRepository
 from soul.memory.user_story import BigMoment, apply_story_observations, ensure_story_defaults, infer_mood_trend
-from soul.persistence.db import utcnow_iso
+from soul.persistence.db import get_engine, utcnow_iso
 
 
 @dataclass(slots=True)
@@ -49,12 +49,14 @@ def consolidate_pending_sessions(*, database_url: str, settings: Settings | None
     shared_repo = SharedLanguageRepository(database_url, user_id=resolved_settings.user_id)
     memory_repo = EpisodicMemoryRepository(settings=resolved_settings)
     results: list[dict[str, object]] = []
+    engine = get_engine(database_url)
 
     for session_id in messages_repo.list_unconsolidated_completed_session_ids():
         rows = messages_repo.get_session_messages(session_id)
         user_lines = [str(row["content"]).strip() for row in rows if str(row.get("role", "")).casefold() == "user" and str(row.get("content", "")).strip()]
         if not user_lines:
-            messages_repo.mark_session_consolidated(session_id, source=source)
+            with engine.begin() as connection:
+                messages_repo.mark_session_consolidated(session_id, source=source, connection=connection)
             results.append({"session_id": session_id, "processed_messages": len(rows), "memories_added": 0, "story_updated": False, "skipped": True})
             continue
 
@@ -62,35 +64,37 @@ def consolidate_pending_sessions(*, database_url: str, settings: Settings | None
         update = apply_story_observations(story, user_lines, mood_hint=infer_mood_trend(user_lines[-1]), observed_at=utcnow_iso())
         structured = _extract_structured_insights(user_lines, resolved_settings)
         story_updated = update.changed or _merge_structured_insights(story, structured)
-        story_repo.save_story(story, source="maintenance")
-
         memories_added = 0
-        for line in user_lines:
-            importance = _infer_importance(line)
-            if importance < 0.55:
-                continue
-            memory_repo.add_text(
-                line,
-                emotional_tag=_infer_emotional_tag(line),
-                importance=importance,
-                memory_type="moment" if importance < 0.8 else "milestone",
-                metadata={
-                    "source": "consolidation",
-                    "session_id": session_id,
-                    "user_id": resolved_settings.user_id,
-                    "timestamp": utcnow_iso(),
-                    "label": "consolidated session memory",
-                },
-            )
-            memories_added += 1
+        with engine.begin() as connection:
+            story_repo.save_story(story, source="maintenance", connection=connection)
 
-        for phrase in ("late night coding", "as always", "rough day"):
-            if any(phrase in line.casefold() for line in user_lines):
-                shared_repo.register(phrase)
-        for phrase in structured.shared_phrases:
-            shared_repo.register(phrase, "llm-extracted session phrase")
+            for line in user_lines:
+                importance = _infer_importance(line)
+                if importance < 0.55:
+                    continue
+                memory_repo.add_text(
+                    line,
+                    emotional_tag=_infer_emotional_tag(line),
+                    importance=importance,
+                    memory_type="moment" if importance < 0.8 else "milestone",
+                    metadata={
+                        "source": "consolidation",
+                        "session_id": session_id,
+                        "user_id": resolved_settings.user_id,
+                        "timestamp": utcnow_iso(),
+                        "label": "consolidated session memory",
+                    },
+                    connection=connection,
+                )
+                memories_added += 1
 
-        messages_repo.mark_session_consolidated(session_id, source=source)
+            for phrase in ("late night coding", "as always", "rough day"):
+                if any(phrase in line.casefold() for line in user_lines):
+                    shared_repo.register(phrase, connection=connection)
+            for phrase in structured.shared_phrases:
+                shared_repo.register(phrase, "llm-extracted session phrase", connection=connection)
+
+            messages_repo.mark_session_consolidated(session_id, source=source, connection=connection)
         results.append(
             {
                 "session_id": session_id,

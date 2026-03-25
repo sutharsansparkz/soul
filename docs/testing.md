@@ -38,7 +38,7 @@ Notes:
 
 - `make test` verifies Python 3.11+, checks that `pytest` is installed, and
   runs `python -m pytest -q`.
-- `make lint` currently runs `compileall` against `soul/` and `scripts/`. It is
+- `make lint` currently runs `compileall` against `soul/`. It is
   a syntax/import sanity check, not a formatter or style linter.
 - `requirements.txt` contains runtime dependencies only, so it does not replace
   the editable dev install for contributors.
@@ -88,12 +88,6 @@ not be treated as the default local test path.
 
 ## Docker Test Path
 
-The repo also exposes:
-
-```bash
-make docker-test
-```
-
-This path uses the bundled Docker test scaffold. It can still be useful, but
-the primary contributor workflow described in the docs is the local Python plus
-SQLite path.
+This repository does not currently include the Docker-based test scaffold.
+Use the local Python + SQLite test path instead (for example `make test` or
+`python -m pytest -q`).

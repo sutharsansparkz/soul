@@ -86,7 +86,7 @@ class ReflectionArtifactsRepository:
                         VALUES (
                             :id, :user_id, :reflection_key, :summary, :insights_json, :source, :trace_id, :created_at
                         )
-                        ON CONFLICT(reflection_key) DO UPDATE SET
+                        ON CONFLICT(user_id, reflection_key) DO UPDATE SET
                             summary = excluded.summary,
                             insights_json = excluded.insights_json,
                             source = excluded.source,

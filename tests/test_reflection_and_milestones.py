@@ -31,6 +31,22 @@ def test_reflection_repository_round_trips_entries(tmp_path):
     assert loaded[0].insights == ["slow drift", "care"]
 
 
+def test_reflection_repository_is_scoped_per_user(tmp_path):
+    database_url = f"sqlite:///{(tmp_path / 'soul.db').as_posix()}"
+    db.init_db(database_url)
+    repo_a = ReflectionArtifactsRepository(database_url, user_id="user-a")
+    repo_b = ReflectionArtifactsRepository(database_url, user_id="user-b")
+
+    # Same month key, different users must not overwrite each other.
+    repo_a.append(ReflectionArtifact(date="2026-03", summary="A-summary", insights=["a1"]))
+    repo_b.append(ReflectionArtifact(date="2026-03", summary="B-summary", insights=["b1"]))
+
+    assert repo_a.get_by_key("2026-03") is not None
+    assert repo_b.get_by_key("2026-03") is not None
+    assert repo_a.get_by_key("2026-03").summary == "A-summary"
+    assert repo_b.get_by_key("2026-03").summary == "B-summary"
+
+
 def test_post_processor_records_milestones_and_story_updates(tmp_path):
     database_url = f"sqlite:///{(tmp_path / 'soul.db').as_posix()}"
     db.init_db(database_url)

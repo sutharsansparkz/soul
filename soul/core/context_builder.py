@@ -133,4 +133,5 @@ class ContextBuilder:
             user_id=self.settings.user_id,
             k=self.settings.memory_retrieval_k,
             passive=True,
+            mutate_on_retrieve=False,
         )

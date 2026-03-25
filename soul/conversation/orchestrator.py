@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+from concurrent.futures import Future, TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, field
 from time import perf_counter
 
@@ -15,6 +17,8 @@ from soul.core.soul_loader import Soul
 from soul.memory.repositories.messages import MessagesRepository
 from soul.observability.traces import TurnTraceRepository
 
+_logger = logging.getLogger(__name__)
+
 
 @dataclass(slots=True)
 class ConversationTurnResult:
@@ -25,6 +29,7 @@ class ConversationTurnResult:
     llm_result: LLMResult
     trace_id: str
     prompt_sections: list[str] = field(default_factory=list)
+    post_process_future: Future[dict[str, object]] | None = None
 
 
 class ConversationOrchestrator:
@@ -90,12 +95,31 @@ class ConversationOrchestrator:
                 provider=llm_result.provider,
                 metadata={"model": llm_result.model, "fallback_used": llm_result.fallback_used, "error": llm_result.error},
             )
-            post_turn = self.post_processor.process_turn(
+
+            # Fire post-processing in a background thread so the user
+            # doesn't wait for fact extraction / milestone updates.
+            post_future = self.post_processor.process_turn_background(
                 session_id=session_id,
                 user_text=user_text,
                 assistant_text=llm_result.text,
                 mood=mood,
             )
+
+            # Collect post-turn outputs for the trace.
+            # We wait briefly (non-blocking check) but don't block the reply.
+            post_turn: dict[str, object] = {}
+            post_status = "complete"
+            post_error: str | None = None
+            try:
+                post_turn = post_future.result(timeout=0.05)
+            except FutureTimeoutError:
+                # Post-processing still running — keep extraction empty for trace.
+                post_status = "timeout"
+            except Exception as exc:
+                post_status = "failed"
+                post_error = str(exc)
+                _logger.debug("Post-processing failed when writing trace: %s", exc)
+
             trace_id = self.traces.write_trace(
                 session_id=session_id,
                 input_message_id=user_message_id,
@@ -124,6 +148,8 @@ class ConversationOrchestrator:
                     "response_latency_ms": latency_ms,
                     "assistant_text_length": len(llm_result.text),
                     "extraction_outputs": post_turn,
+                    "post_processing_status": post_status,
+                    "post_processing_error": post_error,
                     "persisted_records": post_turn.get("persisted_records", {}),
                 },
             )
@@ -135,6 +161,7 @@ class ConversationOrchestrator:
                 llm_result=llm_result,
                 trace_id=trace_id,
                 prompt_sections=list(getattr(bundle, "prompt_sections", [])),
+                post_process_future=post_future,
             )
         except Exception as exc:
             trace_id = self.traces.write_trace(
@@ -153,9 +180,15 @@ class ConversationOrchestrator:
                         "rationale": mood.rationale,
                     },
                     "prompt_sections": getattr(bundle, "prompt_sections", []),
+                    "post_processing_status": "not_started",
+                    "post_processing_error": None,
                 },
             )
             raise TurnExecutionError(f"Turn failed after trace {trace_id}: {exc}") from exc
+
+    def shutdown(self) -> None:
+        """Drain background threads (call on session end)."""
+        self.post_processor.shutdown()
 
     def _personality_state(self) -> dict[str, object]:
         builder = getattr(self.context_loader, "builder", None)

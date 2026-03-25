@@ -8,7 +8,7 @@ import time
 import pytest
 
 from soul import db
-from soul.config import Settings, get_settings
+from soul.config import Settings, get_settings, clear_settings_cache
 from soul.core.llm_client import LLMClient
 from soul.core.mood_engine import MoodEngine
 
@@ -89,12 +89,12 @@ def isolate_env_file_for_non_live_tests(request):
         return
 
     Settings.model_config["env_file"] = None
-    get_settings.cache_clear()
+    clear_settings_cache()
     try:
         yield
     finally:
         Settings.model_config["env_file"] = original_env_file
-        get_settings.cache_clear()
+        clear_settings_cache()
 
 
 @pytest.fixture(autouse=True)
@@ -145,7 +145,7 @@ def throttle_live_llm_tests(request, monkeypatch):
 
 @pytest.fixture(autouse=True)
 def reset_global_caches():
-    get_settings.cache_clear()
+    clear_settings_cache()
     try:
         from soul.memory.episodic import _INITIALIZED_DATABASES
 
@@ -153,7 +153,7 @@ def reset_global_caches():
     except ImportError:
         pass
     yield
-    get_settings.cache_clear()
+    clear_settings_cache()
     try:
         from soul.memory.episodic import _INITIALIZED_DATABASES
 

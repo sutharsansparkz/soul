@@ -255,21 +255,41 @@ class MessagesRepository:
         )
         return [str(row["id"]) for row in rows]
 
-    def mark_session_consolidated(self, session_id: str, *, source: str = "maintenance") -> None:
+    def mark_session_consolidated(
+        self,
+        session_id: str,
+        *,
+        source: str = "maintenance",
+        connection=None,  # type: ignore[no-untyped-def]
+    ) -> None:
         try:
-            with get_engine(self.database).begin() as connection:
-                connection.execute(
-                    text(
-                        """
-                        INSERT INTO consolidated_sessions (session_id, consolidated_at, source)
-                        VALUES (:session_id, :consolidated_at, :source)
-                        ON CONFLICT(session_id) DO UPDATE SET
-                            consolidated_at = excluded.consolidated_at,
-                            source = excluded.source
-                        """
-                    ),
-                    {"session_id": session_id, "consolidated_at": utcnow_iso(), "source": source},
-                )
+            if connection is None:
+                with get_engine(self.database).begin() as conn:
+                    conn.execute(
+                        text(
+                            """
+                            INSERT INTO consolidated_sessions (session_id, consolidated_at, source)
+                            VALUES (:session_id, :consolidated_at, :source)
+                            ON CONFLICT(session_id) DO UPDATE SET
+                                consolidated_at = excluded.consolidated_at,
+                                source = excluded.source
+                            """
+                        ),
+                        {"session_id": session_id, "consolidated_at": utcnow_iso(), "source": source},
+                    )
+                return
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO consolidated_sessions (session_id, consolidated_at, source)
+                    VALUES (:session_id, :consolidated_at, :source)
+                    ON CONFLICT(session_id) DO UPDATE SET
+                        consolidated_at = excluded.consolidated_at,
+                        source = excluded.source
+                    """
+                ),
+                {"session_id": session_id, "consolidated_at": utcnow_iso(), "source": source},
+            )
         except Exception as exc:
             raise PersistenceError(str(exc)) from exc
 

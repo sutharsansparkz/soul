@@ -1,5 +1,5 @@
 from __future__ import annotations
-from functools import lru_cache
+import threading
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
@@ -172,6 +172,14 @@ class Settings(BaseSettings):
     enable_drift: bool = Field(default=True, alias="ENABLE_DRIFT")
     enable_background_jobs: bool = Field(default=True, alias="ENABLE_BACKGROUND_JOBS")
 
+    # LLM retry / resilience
+    llm_max_retries: int = Field(default=3, alias="LLM_MAX_RETRIES")
+    llm_initial_backoff: float = Field(default=1.0, alias="LLM_INITIAL_BACKOFF")
+    llm_backoff_multiplier: float = Field(default=2.0, alias="LLM_BACKOFF_MULTIPLIER")
+
+    # Maintenance auto-trigger interval (seconds)
+    maintenance_auto_interval: int = Field(default=3600, alias="MAINTENANCE_AUTO_INTERVAL")
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -276,6 +284,20 @@ class Settings(BaseSettings):
         return redacted
 
 
-@lru_cache(maxsize=1)
+_settings_lock = threading.Lock()
+_settings_instance: Settings | None = None
+
+
 def get_settings() -> Settings:
-    return Settings()
+    global _settings_instance
+    if _settings_instance is None:
+        with _settings_lock:
+            if _settings_instance is None:
+                _settings_instance = Settings()
+    return _settings_instance
+
+
+def clear_settings_cache() -> None:
+    global _settings_instance
+    with _settings_lock:
+        _settings_instance = None

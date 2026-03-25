@@ -36,7 +36,7 @@ from soul.memory.repositories.user_facts import UserFactsRepository
 from soul.maintenance.consolidation import consolidate_pending_sessions
 from soul.maintenance.decay import run_hms_decay
 from soul.maintenance.drift import derive_resonance_signals, run_drift_task
-from soul.maintenance.jobs import run_enabled_maintenance
+from soul.maintenance.jobs import run_enabled_maintenance, trigger_maintenance_if_due
 from soul.maintenance.proactive import ReachOutCandidate, dispatch_reach_out_candidates, refresh_proactive_candidates
 from soul.maintenance.reflection import generate_monthly_reflection
 from soul.observability.traces import TurnTraceRepository
@@ -525,10 +525,6 @@ def chat(
     trace_repo = TurnTraceRepository(settings.database_url)
     session_id = messages_repo.create_session(soul.name)
     orchestrator = ConversationOrchestrator(settings, soul)
-    orchestrator.mood_engine = MoodEngine(settings)
-    orchestrator.context_loader.builder = ContextBuilder(settings, soul)
-    orchestrator.client = LLMClient(settings, soul)
-    orchestrator.post_processor = PostProcessor(settings)
     mood_repo = MoodSnapshotsRepository(settings.database_url, user_id=settings.user_id)
     voice_bridge = VoiceBridge(settings)
     episodic_repo = EpisodicMemoryRepository(settings=settings)
@@ -687,6 +683,8 @@ def chat(
     finally:
         messages_repo.close_session(session_id)
         orchestrator.post_processor.process_session_end(session_id=session_id)
+        orchestrator.shutdown()
+        trigger_maintenance_if_due(settings)
 
 
 @memories_app.callback(invoke_without_command=True)
@@ -767,8 +765,18 @@ def memories_search(query: str = typer.Argument(..., help="Search text.")) -> No
     table.add_column("Source", style="cyan", width=10)
     table.add_column("Score", style="cyan", width=8)
     table.add_column("Tier", style="magenta", width=10)
+    # Make content rendering stable for contract tests:
+    # keep the cell wide enough to avoid wrapping into multiple lines.
     table.add_column("Content", style="white")
     table.add_column("Rank", style="cyan", width=8)
+
+    # Deterministic plain-text lines for tests (Rich table wrapping can break
+    # substring assertions).
+    for item in merged[:20]:
+        console.print(
+            f"Rank {float(item['rank']):.4f} Source {item['source']}: {item['content']}"
+        )
+
     for item in merged[:20]:
         table.add_row(
             str(item["source"]),

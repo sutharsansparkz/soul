@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -7,6 +8,8 @@ from datetime import datetime, timezone
 from soul.config import Settings
 from soul.memory.repositories.mood import MoodSnapshotsRepository
 from soul.persistence.sqlite_setup import ensure_schema
+
+_logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -53,7 +56,22 @@ class MoodEngine:
         if user_id != self.settings.user_id:
             self.repository = MoodSnapshotsRepository(self.settings.database_url, user_id=user_id)
 
-        user_mood, confidence, rationale = self._openai_mood(text)
+        try:
+            user_mood, confidence, rationale = self._openai_mood(text)
+        except RuntimeError as exc:
+            # Misconfiguration: fail fast (e.g., missing OPENAI_API_KEY).
+            if "OPENAI_API_KEY is required" in str(exc):
+                raise
+            _logger.exception("Mood classification runtime error; falling back to neutral: %s", exc)
+            user_mood = "neutral"
+            confidence = 0.0
+            rationale = f"mood classification failed: {type(exc).__name__}"
+        except Exception as exc:
+            _logger.exception("Mood classification failed; falling back to neutral: %s", exc)
+            user_mood = "neutral"
+            confidence = 0.0
+            rationale = f"mood classification failed: {type(exc).__name__}"
+
         previous_state = self.current_state(user_id)
         if user_mood == "neutral" and not self._should_preserve_previous_state(text):
             previous_state = None
@@ -90,6 +108,7 @@ class MoodEngine:
         )
         valid = self.settings.mood_valid_labels
         labels_str = ", ".join(valid)
+        valid_set = {str(label).casefold() for label in valid}
         prompt = (
             "Classify the emotional mood of the following user message.\n"
             'Return JSON only: {"mood": "<label>", "confidence": <0.0-1.0>}\n'
@@ -113,11 +132,17 @@ class MoodEngine:
                 raise
             payload = json.loads(raw[start:end])
         mood = str(payload.get("mood", "")).casefold()
+        if mood not in valid_set:
+            mood = "neutral"
         if mood not in self.STATE_MAP:
-            raise ValueError(
-                f"OpenAI returned unrecognised mood label {mood!r}. Expected one of: {labels_str}"
-            )
-        confidence = float(payload.get("confidence", 0.8))
+            # Configured label may exist but doesn't map to a companion state.
+            mood = "neutral"
+
+        try:
+            confidence = float(payload.get("confidence", 0.8))
+        except (TypeError, ValueError):
+            confidence = 0.8
+        confidence = max(0.0, min(1.0, confidence))
         return mood, confidence, f"openai mood prompt (model={self.settings.mood_openai_model})"
 
     def _should_preserve_previous_state(self, text: str) -> bool:

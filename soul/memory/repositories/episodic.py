@@ -35,6 +35,7 @@ class EpisodicMemoryRepository:
         importance: float = 0.5,
         memory_type: str = "moment",
         metadata: dict[str, object] | None = None,
+        connection=None,  # type: ignore[no-untyped-def]
     ) -> MemoryRecord:
         metadata = dict(metadata or {})
         memory_id = str(metadata.get("memory_id") or uuid4())
@@ -86,7 +87,28 @@ class EpisodicMemoryRepository:
             "metadata_json": json.dumps(metadata, ensure_ascii=True),
         }
         try:
-            with get_engine(self.database).begin() as connection:
+            if connection is None:
+                with get_engine(self.database).begin() as conn:
+                    conn.execute(
+                        text(
+                            """
+                            INSERT INTO episodic_memories (
+                                id, user_id, session_id, label, content, emotional_tag, memory_type, source,
+                                created_at, updated_at, observed_at, word_count, flagged, ref_count, tier,
+                                score_emotional, score_retrieval, score_temporal, score_flagged, score_volume,
+                                hms_score, last_computed, last_retrieved, decay_rate, embedding, metadata_json
+                            )
+                            VALUES (
+                                :id, :user_id, :session_id, :label, :content, :emotional_tag, :memory_type, :source,
+                                :created_at, :updated_at, :observed_at, :word_count, :flagged, :ref_count, :tier,
+                                :score_emotional, :score_retrieval, :score_temporal, :score_flagged, :score_volume,
+                                :hms_score, :last_computed, :last_retrieved, :decay_rate, :embedding, :metadata_json
+                            )
+                            """
+                        ),
+                        payload,
+                    )
+            else:
                 connection.execute(
                     text(
                         """
@@ -110,8 +132,22 @@ class EpisodicMemoryRepository:
             raise PersistenceError(str(exc)) from exc
         return self.row_to_record(payload)
 
-    def retrieve(self, *, query: str, user_id: str | None = None, k: int | None = None, passive: bool = True) -> list[MemoryRecord]:
-        return self.retriever.retrieve(query=query, user_id=user_id or self.user_id, k=k, passive=passive)
+    def retrieve(
+        self,
+        *,
+        query: str,
+        user_id: str | None = None,
+        k: int | None = None,
+        passive: bool = True,
+        mutate_on_retrieve: bool = True,
+    ) -> list[MemoryRecord]:
+        return self.retriever.retrieve(
+            query=query,
+            user_id=user_id or self.user_id,
+            k=k,
+            passive=passive,
+            mutate_on_retrieve=mutate_on_retrieve,
+        )
 
     def search(self, query: str, limit: int = 5) -> list[MemoryRecord]:
         return self.retrieve(query=query, user_id=self.user_id, k=limit, passive=False)

@@ -80,65 +80,86 @@ class UserFactsRepository:
     def load(self) -> UserStory:
         return self.load_story()
 
-    def save_story(self, story: UserStory, *, source: str = "runtime") -> None:
+    def save_story(
+        self,
+        story: UserStory,
+        *,
+        source: str = "runtime",
+        connection=None,  # type: ignore[no-untyped-def]
+    ) -> None:
+        """
+        Persist the reconstructed story.
+
+        When `connection` is provided, the caller owns the transaction
+        boundary (unit-of-work pattern).
+        """
         story = ensure_story_defaults(story)
         if not story.updated_at:
             story.updated_at = utcnow_iso()
         try:
-            with get_engine(self.database).begin() as connection:
-                connection.execute(text("DELETE FROM user_facts WHERE user_id = :user_id"), {"user_id": self.user_id})
-                for key, value in story.basics.items():
-                    if value:
-                        self._insert_fact(connection, "basic", key, value, story.updated_at, source=source)
-                for key in ("summary", "current_mood_trend"):
-                    value = str(story.current_chapter.get(key, "") or "").strip()
-                    if value:
-                        self._insert_fact(connection, "current_chapter", key, value, story.updated_at, source=source)
-                for value in story.current_chapter.get("active_goals", []):
-                    self._insert_fact(connection, "active_goal", value, value, story.updated_at, source=source)
-                for value in story.current_chapter.get("active_fears", []):
-                    self._insert_fact(connection, "active_fear", value, value, story.updated_at, source=source)
-                for value in story.values_observed:
-                    self._insert_fact(connection, "value", value, value, story.updated_at, source=source)
-                for value in story.triggers:
-                    self._insert_fact(connection, "trigger", value, value, story.updated_at, source=source)
-                for value in story.things_they_love:
-                    self._insert_fact(connection, "love", value, value, story.updated_at, source=source)
-                for item in story.upcoming_events:
-                    self._insert_fact(
-                        connection,
-                        "upcoming_event",
-                        str(item.get("date", "")),
-                        str(item.get("title", "")),
-                        story.updated_at,
-                        source=source,
-                        extra={"notes": str(item.get("notes", ""))},
-                    )
-                for item in story.relationships:
-                    self._insert_fact(
-                        connection,
-                        "relationship",
-                        str(item.get("name", "")),
-                        str(item.get("role", "")),
-                        story.updated_at,
-                        source=source,
-                        extra={"notes": str(item.get("notes", ""))},
-                    )
-                for item in story.big_moments:
-                    self._insert_fact(
-                        connection,
-                        "big_moment",
-                        item.date,
-                        item.event,
-                        story.updated_at,
-                        source=source,
-                        extra={
-                            "emotional_weight": item.emotional_weight,
-                            "companion_was_there": item.companion_was_there,
-                        },
-                    )
+            if connection is None:
+                with get_engine(self.database).begin() as conn:
+                    self._save_story_impl(conn, story, source=source)
+            else:
+                self._save_story_impl(connection, story, source=source)
         except Exception as exc:
             raise PersistenceError(str(exc)) from exc
+
+    def _save_story_impl(self, connection, story: UserStory, *, source: str) -> None:  # type: ignore[no-untyped-def]
+        connection.execute(
+            text("DELETE FROM user_facts WHERE user_id = :user_id"),
+            {"user_id": self.user_id},
+        )
+        for key, value in story.basics.items():
+            if value:
+                self._insert_fact(connection, "basic", key, value, story.updated_at, source=source)
+        for key in ("summary", "current_mood_trend"):
+            value = str(story.current_chapter.get(key, "") or "").strip()
+            if value:
+                self._insert_fact(connection, "current_chapter", key, value, story.updated_at, source=source)
+        for value in story.current_chapter.get("active_goals", []):
+            self._insert_fact(connection, "active_goal", value, value, story.updated_at, source=source)
+        for value in story.current_chapter.get("active_fears", []):
+            self._insert_fact(connection, "active_fear", value, value, story.updated_at, source=source)
+        for value in story.values_observed:
+            self._insert_fact(connection, "value", value, value, story.updated_at, source=source)
+        for value in story.triggers:
+            self._insert_fact(connection, "trigger", value, value, story.updated_at, source=source)
+        for value in story.things_they_love:
+            self._insert_fact(connection, "love", value, value, story.updated_at, source=source)
+        for item in story.upcoming_events:
+            self._insert_fact(
+                connection,
+                "upcoming_event",
+                str(item.get("date", "")),
+                str(item.get("title", "")),
+                story.updated_at,
+                source=source,
+                extra={"notes": str(item.get("notes", ""))},
+            )
+        for item in story.relationships:
+            self._insert_fact(
+                connection,
+                "relationship",
+                str(item.get("name", "")),
+                str(item.get("role", "")),
+                story.updated_at,
+                source=source,
+                extra={"notes": str(item.get("notes", ""))},
+            )
+        for item in story.big_moments:
+            self._insert_fact(
+                connection,
+                "big_moment",
+                item.date,
+                item.event,
+                story.updated_at,
+                source=source,
+                extra={
+                    "emotional_weight": item.emotional_weight,
+                    "companion_was_there": item.companion_was_there,
+                },
+            )
 
     def save(self, story: UserStory, *, source: str = "runtime") -> None:
         self.save_story(story, source=source)

@@ -8,8 +8,9 @@
   export.
 - `soul/db.py`: compatibility-oriented database helper facade used by tests and
   some command paths.
-- `scripts/`: operational wrappers and compatibility scripts such as
-  `migrate_postgres.py`, `worker.py`, and `beat.py`.
+- (Legacy) `scripts/`: operational wrappers and compatibility scripts such as
+  `migrate_postgres.py`, `worker.py`, and `beat.py` existed in older versions,
+  but this repository currently does not include that directory.
 
 ## Package Map
 

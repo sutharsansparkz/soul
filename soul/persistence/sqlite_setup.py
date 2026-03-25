@@ -84,12 +84,14 @@ def ensure_schema(database: str | Path) -> None:
         CREATE TABLE IF NOT EXISTS reflection_artifacts (
             id TEXT PRIMARY KEY,
             user_id TEXT NOT NULL,
-            reflection_key TEXT NOT NULL UNIQUE,
+            reflection_key TEXT NOT NULL,
             summary TEXT NOT NULL,
             insights_json TEXT NOT NULL DEFAULT '[]',
             source TEXT NOT NULL DEFAULT 'reflection',
             trace_id TEXT,
             created_at TEXT NOT NULL
+            ,
+            UNIQUE(user_id, reflection_key)
         )
         """,
         """
@@ -167,8 +169,96 @@ def ensure_schema(database: str | Path) -> None:
         for statement in statements:
             connection.exec_driver_sql(statement)
         _ensure_existing_tables(connection)
+        _migrate_reflection_artifacts_unique_key(connection)
         _ensure_indexes(connection)
         _ensure_fts(connection)
+
+
+def _migrate_reflection_artifacts_unique_key(connection) -> None:  # type: ignore[no-untyped-def]
+    """
+    Ensure reflection artifacts are uniquely keyed per user + month key.
+
+    Historical bug: the schema previously enforced `UNIQUE(reflection_key)` only,
+    which caused cross-user overwrites when two users generated the same month.
+    """
+
+    # If a composite unique constraint already exists (or is created by the current
+    # schema), do nothing.
+    unique_indexes = connection.execute(text("PRAGMA index_list(reflection_artifacts)")).mappings().all()
+    unique_index_columns: list[list[str]] = []
+    for idx in unique_indexes:
+        if not idx.get("unique"):
+            continue
+        idx_name = idx.get("name")
+        if not idx_name:
+            continue
+        # SQLite PRAGMAs do not support bound parameters, so inline the index
+        # name (it comes from sqlite metadata).
+        col_rows = connection.exec_driver_sql(f"PRAGMA index_info('{idx_name}')").fetchall()
+        # PRAGMA index_info columns are: seqno, cid, name
+        col_names = [str(row[2]) for row in col_rows if row and row[2] is not None]
+        unique_index_columns.append(col_names)
+
+    has_composite_unique = any({"user_id", "reflection_key"}.issubset(set(cols)) for cols in unique_index_columns)
+    has_reflection_key_only_unique = any(cols == ["reflection_key"] for cols in unique_index_columns)
+
+    if has_composite_unique and not has_reflection_key_only_unique:
+        return
+
+    if not has_reflection_key_only_unique:
+        # No old single-column uniqueness found; add composite uniqueness via index.
+        connection.exec_driver_sql(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_reflection_artifacts_user_reflection_unique "
+            "ON reflection_artifacts(user_id, reflection_key)"
+        )
+        return
+
+    # Rebuild the table to drop the old `UNIQUE(reflection_key)` constraint.
+    # SQLite doesn't support dropping unique constraints without a rebuild.
+    connection.exec_driver_sql(
+        """
+        CREATE TABLE reflection_artifacts_new (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            reflection_key TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            insights_json TEXT NOT NULL DEFAULT '[]',
+            source TEXT NOT NULL DEFAULT 'reflection',
+            trace_id TEXT,
+            created_at TEXT NOT NULL,
+            UNIQUE(user_id, reflection_key)
+        )
+        """
+    )
+    connection.exec_driver_sql(
+        """
+        INSERT INTO reflection_artifacts_new (
+            id, user_id, reflection_key, summary, insights_json, source, trace_id, created_at
+        )
+        WITH ranked AS (
+            SELECT
+                id,
+                user_id,
+                reflection_key,
+                summary,
+                insights_json,
+                source,
+                trace_id,
+                created_at,
+                ROW_NUMBER() OVER (
+                    PARTITION BY user_id, reflection_key
+                    ORDER BY created_at DESC
+                ) AS rn
+            FROM reflection_artifacts
+        )
+        SELECT
+            id, user_id, reflection_key, summary, insights_json, source, trace_id, created_at
+        FROM ranked
+        WHERE rn = 1
+        """
+    )
+    connection.exec_driver_sql("DROP TABLE reflection_artifacts")
+    connection.exec_driver_sql("ALTER TABLE reflection_artifacts_new RENAME TO reflection_artifacts")
 
 
 def _ensure_existing_tables(connection) -> None:  # type: ignore[no-untyped-def]

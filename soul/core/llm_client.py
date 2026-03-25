@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import time
 from dataclasses import dataclass
 from typing import Callable
 
@@ -9,6 +11,10 @@ from soul.core.soul_loader import Soul
 
 
 StreamHandler = Callable[[str], None]
+
+logger = logging.getLogger(__name__)
+
+_RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
 
 @dataclass(slots=True)
@@ -29,8 +35,6 @@ class LLMClient:
         if settings.openai_api_key:
             from openai import OpenAI
 
-            # base_url lets any OpenAI-compatible endpoint be used
-            # (e.g. Ollama, LM Studio, Together AI, Azure OpenAI, etc.)
             self._openai = OpenAI(
                 api_key=settings.openai_api_key.get_secret_value(),
                 base_url=settings.openai_base_url or None,
@@ -46,7 +50,7 @@ class LLMClient:
     ) -> LLMResult:
         if self._openai is None:
             raise RuntimeError("OPENAI_API_KEY is required. Set it in your .env file.")
-        return self._reply_openai(system_prompt, messages, stream_handler)
+        return self._reply_with_retry(system_prompt, messages, stream_handler)
 
     def complete_text(
         self,
@@ -67,6 +71,48 @@ class LLMClient:
             mood=synthetic_mood,
             stream_handler=stream_handler,
         )
+
+    def _reply_with_retry(
+        self,
+        system_prompt: str,
+        messages: list[dict[str, str]],
+        stream_handler: StreamHandler | None,
+    ) -> LLMResult:
+        last_error: Exception | None = None
+        backoff = self.settings.llm_initial_backoff
+        max_retries = self.settings.llm_max_retries
+
+        for attempt in range(max_retries):
+            try:
+                return self._reply_openai(system_prompt, messages, stream_handler)
+            except Exception as exc:
+                last_error = exc
+                if not self._is_retryable(exc):
+                    raise
+                if attempt < max_retries - 1:
+                    logger.warning(
+                        "LLM request failed (attempt %d/%d), retrying in %.1fs: %s",
+                        attempt + 1,
+                        max_retries,
+                        backoff,
+                        exc,
+                    )
+                    time.sleep(backoff)
+                    backoff *= self.settings.llm_backoff_multiplier
+
+        raise last_error  # type: ignore[misc]
+
+    def _is_retryable(self, exc: Exception) -> bool:
+        """Check if the exception is a rate-limit or transient server error."""
+        # openai library raises specific error types with status_code
+        status_code = getattr(exc, "status_code", None)
+        if status_code and int(status_code) in _RETRYABLE_STATUS_CODES:
+            return True
+        # Also retry on generic connection/timeout errors
+        exc_name = type(exc).__name__
+        if any(keyword in exc_name for keyword in ("Timeout", "Connection", "APIConnectionError")):
+            return True
+        return False
 
     def _reply_openai(
         self,

@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Connection, Engine
 
 from soul.bootstrap.errors import ConfigurationError
@@ -46,7 +46,22 @@ def get_engine(database: str | Path) -> Engine:
     database_url = normalize_database_url(database)
     if database_url not in _ENGINE_CACHE:
         _ensure_parent(database_url)
-        _ENGINE_CACHE[database_url] = create_engine(database_url, future=True)
+        engine = create_engine(
+            database_url,
+            future=True,
+            connect_args={"timeout": 15},
+        )
+
+        @event.listens_for(engine, "connect")
+        def _set_sqlite_pragmas(dbapi_conn, _connection_record):  # type: ignore[no-untyped-def]
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA journal_mode = WAL")
+            cursor.execute("PRAGMA busy_timeout = 5000")
+            cursor.execute("PRAGMA synchronous = NORMAL")
+            cursor.execute("PRAGMA foreign_keys = ON")
+            cursor.close()
+
+        _ENGINE_CACHE[database_url] = engine
     return _ENGINE_CACHE[database_url]
 
 

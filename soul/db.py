@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
 
 
@@ -43,7 +43,15 @@ def _get_engine(database: Path | str) -> Engine:
     database_url = _engine_key(database)
     if database_url not in _ENGINE_CACHE:
         _ensure_parent(database_url)
-        _ENGINE_CACHE[database_url] = create_engine(database_url, future=True)
+        engine = create_engine(database_url, future=True)
+
+        @event.listens_for(engine, "connect")
+        def _set_sqlite_pragmas(dbapi_conn, _connection_record):  # type: ignore[no-untyped-def]
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA foreign_keys = ON")
+            cursor.close()
+
+        _ENGINE_CACHE[database_url] = engine
     return _ENGINE_CACHE[database_url]
 
 

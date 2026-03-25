@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
 from soul.config import Settings
@@ -13,6 +15,9 @@ from soul.memory.user_story import apply_story_observations
 from soul.persistence.db import utcnow_iso
 
 
+_logger = logging.getLogger(__name__)
+
+
 class PostProcessor:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -21,6 +26,50 @@ class PostProcessor:
         self.episodic_repo = EpisodicMemoryRepository(settings=settings)
         self.shared_language = SharedLanguageRepository(settings.database_url, user_id=settings.user_id)
         self.milestones = MilestonesRepository(settings.database_url)
+        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="soul-postproc")
+
+    # --- background dispatch ---
+
+    def process_turn_background(
+        self,
+        *,
+        session_id: str,
+        user_text: str,
+        assistant_text: str,
+        mood: MoodSnapshot,
+    ) -> Future[dict[str, object]]:
+        """Fire-and-forget wrapper: runs process_turn in a background thread."""
+        return self._executor.submit(
+            self._safe_process_turn,
+            session_id=session_id,
+            user_text=user_text,
+            assistant_text=assistant_text,
+            mood=mood,
+        )
+
+    def _safe_process_turn(
+        self,
+        *,
+        session_id: str,
+        user_text: str,
+        assistant_text: str,
+        mood: MoodSnapshot,
+    ) -> dict[str, object]:
+        """Wrapper that catches and logs exceptions so the thread never crashes."""
+        try:
+            return self.process_turn(
+                session_id=session_id,
+                user_text=user_text,
+                assistant_text=assistant_text,
+                mood=mood,
+            )
+        except Exception:
+            _logger.exception("Background post-processing failed for session %s", session_id)
+            return {"error": "background post-processing failed"}
+
+    def shutdown(self) -> None:
+        """Drain the background thread pool."""
+        self._executor.shutdown(wait=True)
 
     def process_turn(
         self,
