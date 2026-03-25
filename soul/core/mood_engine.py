@@ -123,14 +123,22 @@ class MoodEngine:
             temperature=self.settings.mood_openai_temperature,
         )
         raw = (response.choices[0].message.content or "").strip()
+        if not raw:
+            _logger.warning("Mood classification from OpenAI returned empty content.")
+            return "neutral", 0.0, "empty openai response"
         try:
             payload = json.loads(raw)
         except json.JSONDecodeError:
             start = raw.find("{")
             end = raw.rfind("}") + 1
             if start < 0 or end <= start:
-                raise
-            payload = json.loads(raw[start:end])
+                _logger.warning("Could not decode mood classification from OpenAI: %r", raw)
+                return "neutral", 0.0, f"could not decode openai response: {raw!r}"
+            try:
+                payload = json.loads(raw[start:end])
+            except json.JSONDecodeError:
+                _logger.warning("Could not decode mood classification from OpenAI: %r", raw)
+                return "neutral", 0.0, f"could not decode openai response: {raw!r}"
         mood = str(payload.get("mood", "")).casefold()
         if mood not in valid_set:
             mood = "neutral"

@@ -129,7 +129,16 @@ class LLMClient:
             messages=[{"role": "system", "content": system_prompt}, *messages],
         )
         for event in stream:
-            delta = event.choices[0].delta.content or ""
+            # The OpenAI stream can include keep-alive events without text.
+            # Guard against missing or empty choices/delta structures.
+            choices = getattr(event, "choices", None)
+            if not choices:
+                continue
+            choice = choices[0]
+            delta_obj = getattr(choice, "delta", None)
+            if not delta_obj:
+                continue
+            delta = getattr(delta_obj, "content", "") or ""
             if not delta:
                 continue
             chunks.append(delta)
