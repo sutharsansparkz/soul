@@ -209,12 +209,23 @@ class MessagesRepository:
         )
 
     def count_sessions(self) -> int:
-        return self._count("SELECT COUNT(*) FROM sessions")
+        return self._count(
+            "SELECT COUNT(*) FROM sessions WHERE user_id = :user_id",
+            {"user_id": self.user_id},
+        )
 
     def count_messages(self, *, role: str | None = None) -> int:
         if role is None:
-            return self._count("SELECT COUNT(*) FROM messages")
-        return self._count("SELECT COUNT(*) FROM messages WHERE role = :role", {"role": role})
+            return self._count(
+                "SELECT COUNT(*) FROM messages WHERE session_id IN "
+                "(SELECT id FROM sessions WHERE user_id = :user_id)",
+                {"user_id": self.user_id},
+            )
+        return self._count(
+            "SELECT COUNT(*) FROM messages WHERE role = :role AND session_id IN "
+            "(SELECT id FROM sessions WHERE user_id = :user_id)",
+            {"role": role, "user_id": self.user_id},
+        )
 
     def get_last_message_timestamp(self) -> str | None:
         try:

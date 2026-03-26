@@ -37,7 +37,10 @@ def generate_monthly_reflection(settings: Settings | None = None) -> ReflectionA
         ),
         user_prompt=prompt,
     )
-    entry = _parse_reflection_response(result.text)
+    try:
+        entry = _parse_reflection_response(result.text)
+    except ExtractionValidationError:
+        return None
     entry.date = month_key
     repo.append(entry, source="maintenance")
     EpisodicMemoryRepository(settings=settings).add_text(

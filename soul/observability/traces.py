@@ -13,8 +13,9 @@ from soul.persistence.db import connect, get_engine, utcnow_iso
 
 
 class TurnTraceRepository:
-    def __init__(self, database: str | Path):
+    def __init__(self, database: str | Path, *, user_id: str | None = None):
         self.database = database
+        self.user_id = user_id
 
     def write_trace(
         self,
@@ -56,6 +57,19 @@ class TurnTraceRepository:
         return trace_id
 
     def get_last_trace(self) -> dict[str, object] | None:
+        if self.user_id is not None:
+            return self._get_one(
+                """
+                SELECT t.id, t.session_id, t.input_message_id, t.reply_message_id,
+                       t.status, t.trace_json, t.error, t.created_at
+                FROM turn_traces t
+                JOIN sessions s ON s.id = t.session_id
+                WHERE s.user_id = :user_id
+                ORDER BY t.created_at DESC
+                LIMIT 1
+                """,
+                {"user_id": self.user_id},
+            )
         return self._get_one(
             """
             SELECT id, session_id, input_message_id, reply_message_id, status, trace_json, error, created_at
