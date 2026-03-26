@@ -28,7 +28,7 @@ def build_reach_out_candidates(
     settings: Settings | None = None,
 ) -> list[ReachOutCandidate]:
     resolved_settings = settings or get_settings()
-    today = today or datetime.now()
+    today = today or datetime.now(timezone.utc)
     today_date = today.date()
     candidates: list[ReachOutCandidate] = []
 
@@ -96,8 +96,19 @@ def refresh_proactive_candidates(settings: Settings | None = None, *, channel: s
         settings=resolved_settings,
     )
     repo = ProactiveCandidateRepository(resolved_settings.database_url, user_id=resolved_settings.user_id)
+
+    # Don't re-queue candidates whose trigger was already delivered today.
+    today_str = datetime.now(timezone.utc).date().isoformat()
+    delivered_today = {
+        str(row["trigger"])
+        for row in repo.list(channel=channel, limit=200)
+        if str(row.get("status")) == "delivered"
+        and str(row.get("delivered_at", ""))[:10] == today_str
+    }
+    pending_candidates = [c for c in candidates if c.trigger not in delivered_today]
+
     repo.replace_pending(
-        [{"trigger": item.trigger, "message": item.message, "status": "pending", "channel": channel} for item in candidates],
+        [{"trigger": item.trigger, "message": item.message, "status": "pending", "channel": channel} for item in pending_candidates],
         channel=channel,
     )
     return candidates

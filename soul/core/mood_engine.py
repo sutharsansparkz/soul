@@ -40,6 +40,20 @@ class MoodEngine:
             self.settings.database_url,
             user_id=self.settings.user_id,
         )
+        self._openai_client = None
+
+    def _get_openai_client(self):  # type: ignore[no-untyped-def]
+        if self._openai_client is None:
+            if not self.settings.openai_api_key:
+                raise RuntimeError(
+                    "OPENAI_API_KEY is required for mood classification. Set it in your .env file."
+                )
+            from openai import OpenAI
+            self._openai_client = OpenAI(
+                api_key=self.settings.openai_api_key.get_secret_value(),
+                base_url=self.settings.openai_base_url or None,
+            )
+        return self._openai_client
 
     def analyze(
         self,
@@ -53,8 +67,11 @@ class MoodEngine:
     ) -> MoodSnapshot:
         now = now or datetime.now(timezone.utc)
         user_id = user_id or self.settings.user_id
-        if user_id != self.settings.user_id:
-            self.repository = MoodSnapshotsRepository(self.settings.database_url, user_id=user_id)
+        repository = (
+            MoodSnapshotsRepository(self.settings.database_url, user_id=user_id)
+            if user_id != self.settings.user_id
+            else self.repository
+        )
 
         try:
             user_mood, confidence, rationale = self._openai_mood(text)
@@ -83,7 +100,7 @@ class MoodEngine:
             rationale=rationale,
         )
         if persist:
-            self.repository.add_snapshot(
+            repository.add_snapshot(
                 session_id=session_id,
                 message_id=message_id,
                 user_mood=snapshot.user_mood,
@@ -95,17 +112,7 @@ class MoodEngine:
         return snapshot
 
     def _openai_mood(self, text: str) -> tuple[str, float, str]:
-        if not self.settings.openai_api_key:
-            raise RuntimeError(
-                "OPENAI_API_KEY is required for mood classification. Set it in your .env file."
-            )
-
-        from openai import OpenAI
-
-        client = OpenAI(
-            api_key=self.settings.openai_api_key.get_secret_value(),
-            base_url=self.settings.openai_base_url or None,
-        )
+        client = self._get_openai_client()
         valid = self.settings.mood_valid_labels
         labels_str = ", ".join(valid)
         valid_set = {str(label).casefold() for label in valid}

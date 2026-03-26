@@ -39,7 +39,7 @@ def test_memories_list_renders_hms_score_and_tier_bars(tmp_path, monkeypatch):
     assert result.exit_code == 0
     assert "sorted by HMS score" in result.stdout
     assert "vivid" in result.stdout or "present" in result.stdout
-    assert "█" in result.stdout
+    assert "#" in result.stdout
     assert "manual" in result.stdout
 
 

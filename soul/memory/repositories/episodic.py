@@ -195,11 +195,12 @@ class EpisodicMemoryRepository:
         row = self.get_row(memory_id)
         if row is None:
             return None
+        ref_count = int(row.get("ref_count") or 0) + 1
         components = boosted_components(
             emotional_tag=str(row.get("emotional_tag") or ""),
             memory_timestamp=str(row.get("observed_at") or utcnow_iso()),
             word_count=int(row.get("word_count") or len(str(row.get("content", "")).split())),
-            ref_count=int(row.get("ref_count") or 0),
+            ref_count=ref_count,
             half_life_days=float(self.settings.hms_decay_halflife_days),
             cold_threshold=float(self.settings.hms_cold_threshold),
             score_emotional_override=float(row.get("score_emotional", 0.5)),
@@ -209,6 +210,7 @@ class EpisodicMemoryRepository:
             memory_id,
             {
                 "flagged": 1,
+                "ref_count": ref_count,
                 "tier": components.tier,
                 "score_emotional": components.score_emotional,
                 "score_retrieval": components.score_retrieval,

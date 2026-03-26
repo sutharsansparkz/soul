@@ -58,10 +58,14 @@ def test_debug_last_turn_reads_sqlite_trace(tmp_path, monkeypatch):
     soul = Soul(raw={"identity": {"name": "Ara", "voice": "warm", "energy": "steady"}}, name="Ara", voice="warm", energy="steady")
     cli._ensure_runtime_files(settings)
     from soul.persistence.sqlite_setup import ensure_schema
+    from soul.memory.repositories.messages import MessagesRepository
 
     ensure_schema(settings.database_url)
+    # Create a real session so the user-scoped trace query can join through it
+    messages_repo = MessagesRepository(settings.database_url, user_id=settings.user_id)
+    session_id = messages_repo.create_session("Ara")
     TurnTraceRepository(settings.database_url).write_trace(
-        session_id="session-1",
+        session_id=session_id,
         input_message_id="user-1",
         reply_message_id="assistant-1",
         payload={"provider": "local-runtime", "model": "runtime-clock"},

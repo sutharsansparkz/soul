@@ -279,10 +279,63 @@ def _show_last_session(settings: Settings) -> None:
 
 def _render_story(settings: Settings) -> None:
     payload = UserFactsRepository(settings.database_url, user_id=settings.user_id).export_story_payload()
-    if not any(payload.values()):
+    chapter = payload.get("current_chapter") or {}
+    has_content = (
+        bool(chapter.get("summary"))
+        or bool(chapter.get("active_goals"))
+        or bool(chapter.get("active_fears"))
+        or bool(payload.get("big_moments"))
+        or bool(payload.get("relationships"))
+        or bool(payload.get("values_observed"))
+        or bool(payload.get("things_they_love"))
+        or bool(payload.get("upcoming_events"))
+        or bool(payload.get("triggers"))
+    )
+    if not has_content:
         console.print("[dim]No user story exists yet.[/dim]")
         return
-    console.print_json(json.dumps(payload))
+
+    table = Table(title="User Story", box=box.SIMPLE_HEAVY, show_header=False)
+    table.add_column("Field", style="magenta", width=20)
+    table.add_column("Value", style="white")
+
+    if chapter.get("summary"):
+        table.add_row("Chapter", str(chapter["summary"]))
+    if chapter.get("current_mood_trend"):
+        table.add_row("Mood trend", str(chapter["current_mood_trend"]))
+    if chapter.get("active_goals"):
+        table.add_row("Goals", ", ".join(str(g) for g in chapter["active_goals"]))
+    if chapter.get("active_fears"):
+        table.add_row("Fears", ", ".join(str(f) for f in chapter["active_fears"]))
+
+    basics = payload.get("basics") or {}
+    if basics.get("birthday"):
+        table.add_row("Birthday", str(basics["birthday"]))
+
+    for field, label in [
+        ("big_moments", "Big moments"),
+        ("relationships", "Relationships"),
+        ("values_observed", "Values"),
+        ("things_they_love", "Things they love"),
+        ("upcoming_events", "Upcoming events"),
+        ("triggers", "Triggers"),
+    ]:
+        items = payload.get(field) or []
+        if items:
+            if isinstance(items[0], dict):
+                lines = []
+                for item in items:
+                    parts = [str(v) for v in item.values() if v]
+                    lines.append("  ".join(parts))
+                table.add_row(label, "\n".join(lines))
+            else:
+                table.add_row(label, ", ".join(str(i) for i in items))
+
+    updated = str(payload.get("updated_at", ""))[:10]
+    if updated:
+        table.add_row("Last updated", updated)
+
+    console.print(table)
 
 
 def _refresh_reach_out_candidates(settings: Settings) -> None:
@@ -314,7 +367,8 @@ def _show_pending_reach_outs(settings: Settings, soul: Soul) -> None:
         )
         console.print()
 
-    repo.clear_pending(channel="cli")
+    for row in rows:
+        repo.mark_delivered(str(row["id"]))
 
 
 def _voice_output(voice_bridge: VoiceBridge, enabled: bool, text: str) -> None:
@@ -510,6 +564,7 @@ def chat(
     voice_input: Path | None = typer.Option(None, "--voice-input", help="Transcribe an audio file and use it as the first turn."),
     record_seconds: int = typer.Option(0, "--record-seconds", help="Record microphone input before the session when sounddevice is available."),
 ) -> None:
+    """Start an interactive chat session with your AI companion."""
     settings, soul = _bootstrap()
     if voice and not settings.enable_voice:
         console.print("[yellow]Voice feature is disabled. Set ENABLE_VOICE=true to use --voice.[/yellow]")
@@ -522,7 +577,7 @@ def chat(
         _show_last_session(settings)
 
     messages_repo = MessagesRepository(settings.database_url, user_id=settings.user_id)
-    trace_repo = TurnTraceRepository(settings.database_url)
+    trace_repo = TurnTraceRepository(settings.database_url, user_id=settings.user_id)
     session_id = messages_repo.create_session(soul.name)
     orchestrator = ConversationOrchestrator(settings, soul)
     mood_repo = MoodSnapshotsRepository(settings.database_url, user_id=settings.user_id)
@@ -739,6 +794,7 @@ def memories_list(ctx: typer.Context) -> None:
 
 @memories_app.command("search")
 def memories_search(query: str = typer.Argument(..., help="Search text.")) -> None:
+    """Search memories by text and show HMS-reranked results."""
     settings, _ = _bootstrap()
     episodic_repo = EpisodicMemoryRepository(settings=settings)
     episodic = episodic_repo.search(query, limit=20)
@@ -762,20 +818,13 @@ def memories_search(query: str = typer.Argument(..., help="Search text.")) -> No
     merged.sort(key=lambda row: float(row["rank"]), reverse=True)
 
     table = Table(title=f'Unified Memory Search: "{query}" (HMS reranked)', box=box.SIMPLE_HEAVY)
-    table.add_column("Source", style="cyan", width=10)
+    table.add_column("Source", style="cyan", width=18)
     table.add_column("Score", style="cyan", width=8)
     table.add_column("Tier", style="magenta", width=10)
     # Make content rendering stable for contract tests:
     # keep the cell wide enough to avoid wrapping into multiple lines.
     table.add_column("Content", style="white")
     table.add_column("Rank", style="cyan", width=8)
-
-    # Deterministic plain-text lines for tests (Rich table wrapping can break
-    # substring assertions).
-    for item in merged[:20]:
-        console.print(
-            f"Rank {float(item['rank']):.4f} Source {item['source']}: {item['content']}"
-        )
 
     for item in merged[:20]:
         table.add_row(
@@ -790,6 +839,7 @@ def memories_search(query: str = typer.Argument(..., help="Search text.")) -> No
 
 @memories_app.command("top")
 def memories_top() -> None:
+    """Show the top-scoring (most vivid) memories."""
     settings, _ = _bootstrap()
     episodic_repo = EpisodicMemoryRepository(settings=settings)
     rows = episodic_repo.list_top(limit=10)
@@ -799,14 +849,17 @@ def memories_top() -> None:
     table = Table(title="Top Memories (Most Vivid)", box=box.SIMPLE_HEAVY)
     table.add_column("Score", style="cyan", width=8)
     table.add_column("Tier", style="magenta", width=10)
+    table.add_column("Source", style="dim", width=18)
     table.add_column("Content", style="white")
     for row in rows:
-        table.add_row(f"{_record_hms_score(row):.2f}", _record_tier(row), str(row.content))
+        source = str(row.metadata.get("source") or "") if hasattr(row, "metadata") else ""
+        table.add_row(f"{_record_hms_score(row):.2f}", _record_tier(row), source, str(row.content))
     console.print(table)
 
 
 @memories_app.command("cold")
 def memories_cold() -> None:
+    """Show cold (low-score, fading) memories."""
     settings, _ = _bootstrap()
     episodic_repo = EpisodicMemoryRepository(settings=settings)
     rows = episodic_repo.list_cold(limit=50)
@@ -828,6 +881,7 @@ def memories_cold() -> None:
 
 @memories_app.command("boost")
 def memories_boost(query: str = typer.Argument(..., help="Query to match and boost memory.")) -> None:
+    """Boost the HMS score of the best-matching memory."""
     settings, _ = _bootstrap()
     episodic_repo = EpisodicMemoryRepository(settings=settings)
     matches = episodic_repo.search(query, limit=5)
@@ -836,15 +890,17 @@ def memories_boost(query: str = typer.Argument(..., help="Query to match and boo
         return
     target = matches[0]
     memory_id = str(target.metadata.get("memory_id", target.id))
-    before = _record_hms_score(target)
+    before_row = episodic_repo.get_row(memory_id)
+    before = float(before_row["hms_score"]) if before_row and "hms_score" in before_row else _record_hms_score(target)
     updated = episodic_repo.boost(memory_id)
     after = float(updated["hms_score"]) if updated and "hms_score" in updated else before
-    console.print(f"[green]Boosted memory.[/green] {before:.2f} -> {after:.2f}")
+    console.print(f"[green]Boosted memory.[/green] {before:.3f} -> {after:.3f}")
     console.print(f"[dim]{target.content}[/dim]")
 
 
 @memories_app.command("clear")
 def memories_clear() -> None:
+    """Wipe all stored memories for the current user."""
     settings, _ = _bootstrap()
     confirmed = Confirm.ask("Wipe all stored memories?", default=False)
     if not confirmed:
@@ -852,7 +908,6 @@ def memories_clear() -> None:
         return
     episodic_repo = EpisodicMemoryRepository(settings=settings)
     deleted = episodic_repo.clear()
-    db.clear_memories(settings.database_url)
     console.print(f"[green]Deleted {deleted} SQLite-backed memories.[/green]")
 
 
@@ -870,7 +925,7 @@ def _record_tier(record) -> str:
 
 def _score_bar(score: float, width: int = 12) -> str:
     filled = int(max(0, min(width, round(score * width))))
-    return ("█" * filled) + ("." * (width - filled))
+    return ("#" * filled) + ("." * (width - filled))
 
 
 def _record_retrieval_rank(record, *, query: str) -> float:
@@ -911,6 +966,7 @@ def story_show(ctx: typer.Context) -> None:
 
 @story_app.command("edit")
 def story_edit() -> None:
+    """Open the user story in an external editor for manual editing."""
     settings, _ = _bootstrap()
     story_repo = UserFactsRepository(settings.database_url, user_id=settings.user_id)
     payload = story_repo.export_story_payload()
@@ -948,26 +1004,42 @@ def story_edit() -> None:
 
 @app.command()
 def drift() -> None:
+    """Show personality drift history over time."""
     settings, _ = _bootstrap()
-    runs = PersonalityStateRepository(settings.database_url, user_id=settings.user_id).list_history(limit=20)
+    runs = PersonalityStateRepository(settings.database_url, user_id=settings.user_id).list_history(limit=21)
     if not runs:
         console.print("[dim]No drift runs recorded yet.[/dim]")
         return
+    # list_history returns newest-first; reverse to get chronological order
+    runs_asc = list(reversed(runs))
     table = Table(title="Drift History", box=box.SIMPLE_HEAVY)
     table.add_column("Date", style="cyan", width=14)
-    table.add_column("Before", style="white")
-    table.add_column("After", style="white")
-    for row in runs[-20:]:
+    table.add_column("State", style="white")
+    table.add_column("Signals", style="dim")
+    for row in runs_asc[-20:]:
+        state_raw = row.get("state_json", "{}")
+        signals_raw = row.get("resonance_signals_json", "{}")
+        try:
+            state_dict = json.loads(str(state_raw)) if isinstance(state_raw, str) else state_raw
+            state_str = "  ".join(f"{k}: {v:.3f}" for k, v in state_dict.items()) if state_dict else "{}"
+        except (json.JSONDecodeError, TypeError, AttributeError):
+            state_str = str(state_raw)
+        try:
+            sig_dict = json.loads(str(signals_raw)) if isinstance(signals_raw, str) else signals_raw
+            sig_str = "  ".join(f"{k}: {v:+.3f}" for k, v in sig_dict.items()) if sig_dict else "{}"
+        except (json.JSONDecodeError, TypeError, AttributeError):
+            sig_str = str(signals_raw)
         table.add_row(
             str(row.get("created_at", ""))[:10],
-            "-",
-            str(row.get("state_json", "{}")),
+            state_str,
+            sig_str,
         )
     console.print(table)
 
 
 @app.command()
 def milestones() -> None:
+    """Show relationship milestones and timeline."""
     settings, _ = _bootstrap()
     rows = db.list_milestones(settings.database_url)
     if not rows:
@@ -984,6 +1056,7 @@ def milestones() -> None:
 
 @app.command()
 def status() -> None:
+    """Show current companion status, mood, and session stats."""
     settings, soul = _bootstrap()
     mood_engine = MoodEngine(settings)
     voice_bridge = VoiceBridge(settings) if settings.enable_voice else None
@@ -991,9 +1064,9 @@ def status() -> None:
     now = runtime_now(settings)
     messages_repo = MessagesRepository(settings.database_url, user_id=settings.user_id)
     total_sessions = messages_repo.count_sessions()
-    total_messages = messages_repo.count_messages()
+    total_messages = messages_repo.count_messages(role="user")
     presence_context = build_presence_context(settings.database_url, settings, now=now)
-    queued_candidates = refresh_proactive_candidates(settings, channel="cli") if settings.enable_proactive else []
+    queued_candidates = ProactiveCandidateRepository(settings.database_url, user_id=settings.user_id).list_pending(channel="cli") if settings.enable_proactive else []
 
     current_state = mood_engine.current_state(settings.user_id) or {}
     mood_state = current_state.get("state") or db.get_last_companion_state(settings.database_url) or "no sessions yet"
@@ -1003,8 +1076,8 @@ def status() -> None:
     table.add_row("Companion", soul.name)
     table.add_row("Database", settings.redacted_database_url)
     table.add_row("Environment", settings.environment)
-    table.add_row("Total sessions", str(total_sessions))
-    table.add_row("Total messages", str(total_messages))
+    table.add_row("Chat sessions", str(total_sessions))
+    table.add_row("Your messages", str(total_messages))
     table.add_row(
         "Days since last chat",
         "never" if presence_context["days_since_last_chat"] is None else str(presence_context["days_since_last_chat"]),
@@ -1019,16 +1092,24 @@ def status() -> None:
 
 @app.command("run-jobs")
 def run_jobs() -> None:
+    """Run maintenance jobs (consolidation, decay, drift, reflection, proactive)."""
     settings, _ = _bootstrap()
     results = run_enabled_maintenance(settings)
-    console.print(
-        "[green]Maintenance run completed.[/green] "
-        + json.dumps(results, ensure_ascii=True)
-    )
+    table = Table(title="Maintenance Results", box=box.SIMPLE_HEAVY)
+    table.add_column("Job", style="cyan")
+    table.add_column("Result", style="white")
+    if isinstance(results, dict):
+        for job, result in results.items():
+            table.add_row(str(job), str(result))
+    else:
+        table.add_row("output", str(results))
+    console.print(table)
+    console.print("[green]Maintenance run completed.[/green]")
 
 
 @app.command("telegram-bot")
 def telegram_bot() -> None:
+    """Start the Telegram bot interface (requires ENABLE_TELEGRAM=true)."""
     settings = get_settings()
     if not settings.enable_telegram:
         console.print("[yellow]Telegram feature is disabled. Set ENABLE_TELEGRAM=true to use this command.[/yellow]")
@@ -1050,11 +1131,12 @@ def telegram_bot() -> None:
 def db_default(ctx: typer.Context) -> None:
     if ctx.invoked_subcommand is not None:
         return
-    db_init()
+    console.print(ctx.get_help())
 
 
 @db_app.command("init")
 def db_init() -> None:
+    """Initialize or migrate the SQLite database schema."""
     settings = get_settings()
     _ensure_runtime_files(settings)
     db.init_db(settings.database_url)
@@ -1071,8 +1153,9 @@ def db_rebuild_fts() -> None:
 
 @debug_app.command("last-turn")
 def debug_last_turn() -> None:
+    """Show the trace from the most recent conversation turn."""
     settings, _ = _bootstrap()
-    trace = TurnTraceRepository(settings.database_url).get_last_trace()
+    trace = TurnTraceRepository(settings.database_url, user_id=settings.user_id).get_last_trace()
     if trace is None:
         console.print("[dim]No turn traces recorded yet.[/dim]")
         return
@@ -1081,16 +1164,24 @@ def debug_last_turn() -> None:
 
 @debug_app.command("show-mood")
 def debug_show_mood() -> None:
+    """Show the latest mood snapshot for the current user."""
     settings, _ = _bootstrap()
     payload = MoodSnapshotsRepository(settings.database_url, user_id=settings.user_id).latest()
     if payload is None:
         console.print("[dim]No mood snapshots recorded yet.[/dim]")
         return
-    console.print_json(json.dumps(payload, indent=2, ensure_ascii=True))
+    table = Table(title="Latest Mood Snapshot", box=box.SIMPLE_HEAVY, show_header=False)
+    table.add_column("Field", style="magenta", width=20)
+    table.add_column("Value", style="white")
+    for key in ("user_mood", "companion_state", "confidence", "rationale", "created_at"):
+        if key in payload:
+            table.add_row(key.replace("_", " ").title(), str(payload[key]))
+    console.print(table)
 
 
 @debug_app.command("show-facts")
 def debug_show_facts() -> None:
+    """Show the raw user story/facts payload as JSON."""
     settings, _ = _bootstrap()
     payload = UserFactsRepository(settings.database_url, user_id=settings.user_id).export_story_payload()
     console.print_json(json.dumps(payload, indent=2, ensure_ascii=True))
@@ -1098,34 +1189,68 @@ def debug_show_facts() -> None:
 
 @debug_app.command("show-memories")
 def debug_show_memories(limit: int = typer.Option(20, min=1, max=200)) -> None:
+    """Show top episodic memories with scores and metadata."""
     settings, _ = _bootstrap()
     records = EpisodicMemoryRepository(settings=settings).list_top(limit=limit)
-    payload = [
-        {
-            "id": str(record.metadata.get("memory_id", record.id)),
-            "content": record.content,
-            "emotional_tag": record.emotional_tag,
-            "memory_type": record.memory_type,
-            "hms_score": record.metadata.get("hms_score"),
-            "tier": record.metadata.get("tier"),
-            "source": record.metadata.get("source"),
-            "session_id": record.metadata.get("session_id"),
-            "timestamp": record.metadata.get("timestamp"),
-        }
-        for record in records
-    ]
-    console.print_json(json.dumps(payload, indent=2, ensure_ascii=True))
+    if not records:
+        console.print("[dim]No memories stored yet.[/dim]")
+        return
+    table = Table(title=f"Episodic Memories (top {limit})", box=box.SIMPLE_HEAVY)
+    table.add_column("Score", style="cyan", width=7)
+    table.add_column("Tier", style="magenta", width=9)
+    table.add_column("Tag", style="dim", width=12)
+    table.add_column("Source", style="dim", width=18)
+    table.add_column("Date", style="dim", width=12)
+    table.add_column("Content", style="white")
+    for record in records:
+        ts = str(record.metadata.get("timestamp", ""))[:10]
+        table.add_row(
+            f"{float(record.metadata.get('hms_score', 0)):.2f}",
+            str(record.metadata.get("tier", "")),
+            str(record.emotional_tag or ""),
+            str(record.metadata.get("source", "")),
+            ts,
+            str(record.content),
+        )
+    console.print(table)
 
 
 @debug_app.command("show-personality")
 def debug_show_personality(limit: int = typer.Option(10, min=1, max=100)) -> None:
+    """Show personality state history (drift versions)."""
     settings, _ = _bootstrap()
-    payload = PersonalityStateRepository(settings.database_url, user_id=settings.user_id).list_history(limit=limit)
-    console.print_json(json.dumps(payload, indent=2, ensure_ascii=True))
+    rows = PersonalityStateRepository(settings.database_url, user_id=settings.user_id).list_history(limit=limit)
+    if not rows:
+        console.print("[dim]No personality state recorded yet.[/dim]")
+        return
+    table = Table(title="Personality State History", box=box.SIMPLE_HEAVY)
+    table.add_column("Ver", style="cyan", width=5)
+    table.add_column("Date", style="dim", width=12)
+    table.add_column("State", style="white")
+    table.add_column("Signals", style="dim")
+    for row in rows:
+        try:
+            state_dict = json.loads(str(row.get("state_json", "{}")))
+            state_str = "  ".join(f"{k}: {v:.3f}" for k, v in state_dict.items())
+        except (json.JSONDecodeError, TypeError):
+            state_str = str(row.get("state_json", ""))
+        try:
+            sig_dict = json.loads(str(row.get("resonance_signals_json", "{}")))
+            sig_str = "  ".join(f"{k}: {v:+.3f}" for k, v in sig_dict.items())
+        except (json.JSONDecodeError, TypeError):
+            sig_str = str(row.get("resonance_signals_json", ""))
+        table.add_row(
+            str(row.get("version", "")),
+            str(row.get("created_at", ""))[:10],
+            state_str,
+            sig_str,
+        )
+    console.print(table)
 
 
 @debug_app.command("show-trace")
 def debug_show_trace(trace_id: str = typer.Argument(..., help="Trace ID.")) -> None:
+    """Show a specific turn trace by ID."""
     settings, _ = _bootstrap()
     trace = TurnTraceRepository(settings.database_url).get_trace(trace_id)
     if trace is None:
@@ -1136,6 +1261,7 @@ def debug_show_trace(trace_id: str = typer.Argument(..., help="Trace ID.")) -> N
 
 @debug_app.command("explain-memory")
 def debug_explain_memory(memory_id: str = typer.Argument(..., help="Memory ID.")) -> None:
+    """Show all stored fields for a specific memory by ID."""
     settings, _ = _bootstrap()
     row = EpisodicMemoryRepository(settings=settings).get_row(memory_id)
     if row is None:
@@ -1146,12 +1272,14 @@ def debug_explain_memory(memory_id: str = typer.Argument(..., help="Memory ID.")
 
 @app.command()
 def config() -> None:
+    """Show current configuration (API keys redacted)."""
     settings = get_settings()
     console.print_json(json.dumps(settings.as_redacted_dict(), indent=2))
 
 
 @app.command()
 def version() -> None:
+    """Show the installed SOUL version."""
     console.print(f"SOUL {__version__}")
 
 

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Iterator
 
 from sqlalchemy import create_engine, event, text
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Connection, Engine
 
 
 def utcnow_iso() -> str:
@@ -851,18 +851,24 @@ def get_last_message_timestamp(database: Path | str) -> str | None:
 
 
 def get_last_companion_state(database: Path | str, user_id: str | None = None) -> str | None:
+    predicates = ["role = 'assistant'", "companion_state IS NOT NULL"]
+    params: dict[str, object] = {}
+    if user_id is not None:
+        predicates.append("session_id IN (SELECT id FROM sessions WHERE user_id = :user_id)")
+        params["user_id"] = user_id
+    where_sql = " AND ".join(predicates)
     with connect(database) as connection:
         row = connection.execute(
             text(
-                """
+                f"""
                 SELECT companion_state
                 FROM messages
-                WHERE role = 'assistant'
-                  AND companion_state IS NOT NULL
+                WHERE {where_sql}
                 ORDER BY created_at DESC
                 LIMIT 1
                 """
             ),
+            params,
         ).mappings().first()
     return str(row["companion_state"]) if row else None
 

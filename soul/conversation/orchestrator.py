@@ -41,7 +41,7 @@ class ConversationOrchestrator:
         self.context_loader = ContextLoader(settings, soul)
         self.client = LLMClient(settings, soul)
         self.post_processor = PostProcessor(settings)
-        self.traces = TurnTraceRepository(settings.database_url)
+        self.traces = TurnTraceRepository(settings.database_url, user_id=settings.user_id)
 
     def run_turn(
         self,

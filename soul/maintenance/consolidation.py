@@ -62,7 +62,10 @@ def consolidate_pending_sessions(*, database_url: str, settings: Settings | None
 
         story = story_repo.load_story()
         update = apply_story_observations(story, user_lines, mood_hint=infer_mood_trend(user_lines[-1]), observed_at=utcnow_iso())
-        structured = _extract_structured_insights(user_lines, resolved_settings)
+        try:
+            structured = _extract_structured_insights(user_lines, resolved_settings)
+        except Exception:
+            structured = StructuredSessionInsights()
         story_updated = update.changed or _merge_structured_insights(story, structured)
         memories_added = 0
         with engine.begin() as connection:
