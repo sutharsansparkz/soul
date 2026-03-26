@@ -1,12 +1,28 @@
 # CHANGELOG
 
 
+## v0.3.0 (2026-03-26)
+
+
 ## v0.2.1 (2026-03-26)
 
 ### Bug Fixes
 
+- Add tzdata dependency for Windows compatibility
+  ([`165b08a`](https://github.com/sparkz-technology/soul/commit/165b08ab7dbdd9810d1f8b2389e8e0798f94212d))
+
 - Update proactive candidate retrieval in CLI status function
   ([`7569b9b`](https://github.com/sparkz-technology/soul/commit/7569b9b839f72de0737f30506c3d8530459adbb6))
+
+### Chores
+
+- **release**: 0.2.1 [skip ci]
+  ([`03d6381`](https://github.com/sparkz-technology/soul/commit/03d6381c6327b6e914f8cd391969269dd210daf0))
+
+### Features
+
+- Refactor database initialization and enhance environment configuration
+  ([`89b2534`](https://github.com/sparkz-technology/soul/commit/89b25345636e18ffba7f8fd64b2f291fda3988e1))
 
 
 ## v0.2.0 (2026-03-25)
