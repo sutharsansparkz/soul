@@ -1066,7 +1066,9 @@ def status() -> None:
     total_sessions = messages_repo.count_sessions()
     total_messages = messages_repo.count_messages(role="user")
     presence_context = build_presence_context(settings.database_url, settings, now=now)
-    queued_candidates = ProactiveCandidateRepository(settings.database_url, user_id=settings.user_id).list_pending(channel="cli") if settings.enable_proactive else []
+    queued_candidates = (
+        refresh_proactive_candidates(settings, channel="cli") if settings.enable_proactive else []
+    )
 
     current_state = mood_engine.current_state(settings.user_id) or {}
     mood_state = current_state.get("state") or db.get_last_companion_state(settings.database_url) or "no sessions yet"
