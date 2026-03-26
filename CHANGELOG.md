@@ -1,7 +1,20 @@
 # CHANGELOG
 
 
+## v0.2.1 (2026-03-26)
+
+### Bug Fixes
+
+- Update proactive candidate retrieval in CLI status function
+  ([`7569b9b`](https://github.com/sparkz-technology/soul/commit/7569b9b839f72de0737f30506c3d8530459adbb6))
+
+
 ## v0.2.0 (2026-03-25)
+
+### Chores
+
+- **release**: 0.2.0 [skip ci]
+  ([`35898dd`](https://github.com/sparkz-technology/soul/commit/35898ddd876bda5e6389f172bb9e956ed34cde16))
 
 ### Features
 
