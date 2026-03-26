@@ -79,12 +79,12 @@ class MoodEngine:
             # Misconfiguration: fail fast (e.g., missing OPENAI_API_KEY).
             if "OPENAI_API_KEY is required" in str(exc):
                 raise
-            _logger.exception("Mood classification runtime error; falling back to neutral: %s", exc)
+            _logger.warning("Mood classification runtime error; falling back to neutral: %s", exc)
             user_mood = "neutral"
             confidence = 0.0
             rationale = f"mood classification failed: {type(exc).__name__}"
         except Exception as exc:
-            _logger.exception("Mood classification failed; falling back to neutral: %s", exc)
+            _logger.warning("Mood classification failed; falling back to neutral: %s", exc)
             user_mood = "neutral"
             confidence = 0.0
             rationale = f"mood classification failed: {type(exc).__name__}"

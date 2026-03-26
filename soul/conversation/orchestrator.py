@@ -18,6 +18,7 @@ from soul.memory.repositories.messages import MessagesRepository
 from soul.observability.traces import TurnTraceRepository
 
 _logger = logging.getLogger(__name__)
+_TRACE_POST_PROCESS_TIMEOUT_SECONDS = 0.25
 
 
 @dataclass(slots=True)
@@ -111,7 +112,7 @@ class ConversationOrchestrator:
             post_status = "complete"
             post_error: str | None = None
             try:
-                post_turn = post_future.result(timeout=0.05)
+                post_turn = post_future.result(timeout=_TRACE_POST_PROCESS_TIMEOUT_SECONDS)
             except FutureTimeoutError:
                 # Post-processing still running — keep extraction empty for trace.
                 post_status = "timeout"

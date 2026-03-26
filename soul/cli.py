@@ -18,7 +18,7 @@ from rich.table import Table
 from rich.text import Text
 
 from soul import __version__, db
-from soul.bootstrap import FeatureInitializationError, validate_startup
+from soul.bootstrap import FeatureInitializationError, TurnExecutionError, validate_startup
 from soul.conversation.orchestrator import ConversationOrchestrator
 from soul.config import Settings, get_settings
 from soul.core.context_builder import ContextBuilder
@@ -726,12 +726,17 @@ def chat(
                     },
                 )
             else:
-                turn_result, current_mood = _run_orchestrated_turn(
-                    orchestrator,
-                    soul=soul,
-                    session_id=session_id,
-                    user_input=user_input,
-                )
+                try:
+                    turn_result, current_mood = _run_orchestrated_turn(
+                        orchestrator,
+                        soul=soul,
+                        session_id=session_id,
+                        user_input=user_input,
+                    )
+                except TurnExecutionError as exc:
+                    console.print()
+                    console.print(f"[red]Turn failed.[/red] {exc}")
+                    continue
                 result = turn_result.llm_result
                 _voice_output(voice_bridge, voice_output_enabled, result.text)
             console.print(f"[dim]-- {soul.name}: {current_mood.companion_state} | you: {current_mood.user_mood} --[/dim]")
@@ -1096,7 +1101,11 @@ def status() -> None:
 def run_jobs() -> None:
     """Run maintenance jobs (consolidation, decay, drift, reflection, proactive)."""
     settings, _ = _bootstrap()
-    results = run_enabled_maintenance(settings)
+    try:
+        results = run_enabled_maintenance(settings)
+    except Exception as exc:
+        console.print(f"[red]Maintenance run failed.[/red] {exc}")
+        raise typer.Exit(code=1)
     table = Table(title="Maintenance Results", box=box.SIMPLE_HEAVY)
     table.add_column("Job", style="cyan")
     table.add_column("Result", style="white")
@@ -1126,7 +1135,11 @@ def telegram_bot() -> None:
     console.print(table)
     if status_map["telegram"].startswith("disabled"):
         raise typer.Exit(code=0)
-    runner.run_forever()
+    try:
+        runner.run_forever()
+    except Exception as exc:
+        console.print(f"[red]Telegram bot stopped.[/red] {exc}")
+        raise typer.Exit(code=1)
 
 
 @db_app.callback(invoke_without_command=True)

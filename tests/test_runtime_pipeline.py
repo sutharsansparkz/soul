@@ -1,14 +1,22 @@
 from __future__ import annotations
 
+import time
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from typer.testing import CliRunner
 
 from soul import db
+from soul.bootstrap import TurnExecutionError
+from soul.conversation.orchestrator import ConversationOrchestrator
 from soul.config import Settings
+from soul.core.context_builder import ContextBundle
+from soul.core.llm_client import LLMResult
+from soul.core.mood_engine import MoodSnapshot
 from soul.core.post_processor import PostProcessor
 from soul.core.soul_loader import Soul
+from soul.observability.traces import TurnTraceRepository
 import soul.cli as cli
 
 
@@ -195,3 +203,98 @@ def test_process_session_end_exports_only_new_user_rows(tmp_path):
     )
 
     assert len(third_export) == 2
+
+
+def test_run_turn_captures_post_processing_outputs_when_future_completes_quickly(tmp_path, monkeypatch):
+    settings = Settings(
+        database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
+        soul_data_path=str(tmp_path / "soul_data"),
+        openai_api_key=None,
+        _env_file=None,
+    )
+    db.init_db(settings.database_url)
+    session_id = db.create_session(settings.database_url, "Ara")
+    orchestrator = ConversationOrchestrator(settings, _soul())
+
+    mood = MoodSnapshot(
+        user_mood="reflective",
+        companion_state="reflective",
+        confidence=0.9,
+        rationale="test mood",
+    )
+
+    class DelayedFuture:
+        def result(self, timeout=None):  # noqa: ANN001
+            if timeout is not None and timeout < 0.1:
+                raise FutureTimeoutError()
+            time.sleep(0.1)
+            return {
+                "milestones": [{"id": "m-1", "kind": "first_conversation"}],
+                "persisted_records": {"auto_memory_id": "memory-1"},
+            }
+
+    monkeypatch.setattr(orchestrator.mood_engine, "analyze", lambda *args, **kwargs: mood)
+    monkeypatch.setattr(
+        orchestrator.context_loader,
+        "load",
+        lambda *args, **kwargs: ContextBundle(
+            system_prompt="system",
+            messages=[],
+            story_summary=None,
+            memory_snippets=[],
+            retrieved_memories=[],
+            prompt_sections=["mood", "soul_prompt"],
+        ),
+    )
+    monkeypatch.setattr(
+        orchestrator.client,
+        "reply",
+        lambda **kwargs: LLMResult(
+            text="I heard you.",
+            provider="mock-openai",
+            model="test-model",
+            fallback_used=False,
+        ),
+    )
+    monkeypatch.setattr(
+        orchestrator.post_processor,
+        "process_turn_background",
+        lambda **kwargs: DelayedFuture(),
+    )
+
+    result = orchestrator.run_turn(session_id=session_id, user_text="Capture the trace payload.")
+    trace = TurnTraceRepository(settings.database_url, user_id=settings.user_id).get_trace(result.trace_id)
+    orchestrator.shutdown()
+
+    assert trace is not None
+    assert trace["trace"]["post_processing_status"] == "complete"
+    assert trace["trace"]["extraction_outputs"]["persisted_records"] == {"auto_memory_id": "memory-1"}
+    assert trace["trace"]["persisted_records"] == {"auto_memory_id": "memory-1"}
+
+
+def test_chat_reports_turn_failure_and_keeps_session_alive(tmp_path, monkeypatch):
+    settings = Settings(
+        database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
+        soul_data_path=str(tmp_path / "soul_data"),
+        _env_file=None,
+    )
+    db.init_db(settings.database_url)
+
+    prompts = iter(["hello there", "/quit"])
+
+    monkeypatch.setattr(cli, "_bootstrap", lambda: (settings, _soul()))
+    monkeypatch.setattr(
+        cli,
+        "_run_orchestrated_turn",
+        lambda *args, **kwargs: (_ for _ in ()).throw(TurnExecutionError("Turn failed after trace trace-1: Connection error.")),
+    )
+    monkeypatch.setattr(cli.Prompt, "ask", staticmethod(lambda *args, **kwargs: next(prompts)))
+    monkeypatch.setattr(cli, "trigger_maintenance_if_due", lambda settings: None)  # noqa: ARG005
+
+    result = CliRunner().invoke(cli.app, ["chat"])
+
+    assert result.exit_code == 0
+    assert "Turn failed." in result.stdout
+    assert "trace-1: Connection error." in result.stdout
+    session_id = db.get_last_completed_session_id(settings.database_url)
+    assert session_id is not None

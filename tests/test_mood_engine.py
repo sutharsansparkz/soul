@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 import pytest
@@ -107,6 +108,29 @@ def test_mood_engine_falls_back_on_invalid_label(tmp_path, monkeypatch):
     assert mood_snapshot.user_mood == "neutral"
     assert mood_snapshot.companion_state == "neutral"
     assert mood_snapshot.confidence == 0.0
+
+
+def test_mood_engine_fallback_logs_without_traceback(tmp_path, monkeypatch, caplog):
+    settings = Settings(
+        database_url=f"sqlite:///{(tmp_path / 'soul.db').as_posix()}",
+        soul_data_path=str(tmp_path / "soul_data"),
+        openai_api_key="dummy-key",
+        _env_file=None,
+    )
+    engine = MoodEngine(settings)
+
+    def fake(self, text):  # noqa: ANN001, ARG001
+        raise RuntimeError("Connection error.")
+
+    monkeypatch.setattr(MoodEngine, "_openai_mood", fake)
+
+    with caplog.at_level(logging.WARNING, logger="soul.core.mood_engine"):
+        mood_snapshot = engine.analyze("hello there", persist=False)
+
+    assert mood_snapshot.user_mood == "neutral"
+    assert mood_snapshot.rationale == "mood classification failed: RuntimeError"
+    assert "Mood classification runtime error; falling back to neutral: Connection error." in caplog.text
+    assert "Traceback" not in caplog.text
 
 
 def test_mood_engine_maps_settings_label_not_in_state_map_to_neutral(tmp_path, monkeypatch):

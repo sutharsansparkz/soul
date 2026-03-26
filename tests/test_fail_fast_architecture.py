@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 import soul.cli as cli
-from soul.bootstrap import FeatureInitializationError, StartupDependencyError, validate_startup
+from soul.bootstrap import FeatureInitializationError, StartupDependencyError, TurnExecutionError, validate_startup
 from soul.config import Settings
 from soul.core.soul_loader import Soul
 from soul.observability.traces import TurnTraceRepository
@@ -76,3 +76,56 @@ def test_debug_last_turn_reads_sqlite_trace(tmp_path, monkeypatch):
 
     assert result.exit_code == 0
     assert "runtime-clock" in result.stdout
+
+
+def test_db_init_command_is_idempotent(tmp_path, monkeypatch):
+    settings = _settings(tmp_path)
+    monkeypatch.setattr(cli, "get_settings", lambda: settings)
+
+    first = CliRunner().invoke(cli.app, ["db", "init"])
+    second = CliRunner().invoke(cli.app, ["db", "init"])
+
+    assert first.exit_code == 0
+    assert second.exit_code == 0
+    assert "Initialized database" in second.stdout
+
+
+def test_run_jobs_reports_error_without_traceback(tmp_path, monkeypatch):
+    settings = _settings(tmp_path)
+    soul = Soul(raw={"identity": {"name": "Ara", "voice": "warm", "energy": "steady"}}, name="Ara", voice="warm", energy="steady")
+    monkeypatch.setattr(cli, "_bootstrap", lambda: (settings, soul))
+    monkeypatch.setattr(cli, "run_enabled_maintenance", lambda settings: (_ for _ in ()).throw(RuntimeError("Connection error.")))
+
+    result = CliRunner().invoke(cli.app, ["run-jobs"])
+
+    assert result.exit_code == 1
+    assert "Maintenance run failed." in result.stdout
+    assert "Connection error." in result.stdout
+
+
+def test_telegram_bot_reports_poll_failure_without_traceback(tmp_path, monkeypatch):
+    settings = _settings(
+        tmp_path,
+        enable_telegram=True,
+        telegram_bot_token="dummy-token",
+        telegram_chat_id="12345",
+    )
+
+    class FakeRunner:
+        def __init__(self, settings):  # noqa: ANN001
+            self.settings = settings
+
+        def status(self):
+            return {"telegram": "enabled", "presence": "ready", "allowed_chat": "12345"}
+
+        def run_forever(self):
+            raise RuntimeError("Telegram get_updates failed: Connection error.")
+
+    monkeypatch.setattr(cli, "get_settings", lambda: settings)
+    monkeypatch.setattr(cli, "TelegramBotRunner", FakeRunner)
+
+    result = CliRunner().invoke(cli.app, ["telegram-bot"])
+
+    assert result.exit_code == 1
+    assert "Telegram bot stopped." in result.stdout
+    assert "Telegram get_updates failed: Connection error." in result.stdout

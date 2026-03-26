@@ -3,14 +3,28 @@
 from __future__ import annotations
 
 from pathlib import Path
+from threading import Lock
 
 from sqlalchemy import inspect, text
 
-from soul.persistence.db import get_engine, utcnow_iso
+from soul.persistence.db import get_engine, normalize_database_url, utcnow_iso
+
+
+_INITIALIZED_DATABASES: set[str] = set()
+_INITIALIZED_DATABASES_LOCK = Lock()
 
 
 def ensure_schema(database: str | Path) -> None:
-    engine = get_engine(database)
+    database_url = normalize_database_url(database)
+    with _INITIALIZED_DATABASES_LOCK:
+        if database_url in _INITIALIZED_DATABASES:
+            return
+        engine = get_engine(database_url)
+        _initialize_schema(engine)
+        _INITIALIZED_DATABASES.add(database_url)
+
+
+def _initialize_schema(engine) -> None:  # type: ignore[no-untyped-def]
     statements = [
         """
         CREATE TABLE IF NOT EXISTS users (
@@ -269,7 +283,7 @@ def _ensure_existing_tables(connection) -> None:  # type: ignore[no-untyped-def]
     if "sessions" not in tables:
         connection.exec_driver_sql(
             """
-            CREATE TABLE sessions (
+            CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY,
                 companion_name TEXT NOT NULL,
                 user_id TEXT NOT NULL DEFAULT 'local-user',
@@ -293,7 +307,7 @@ def _ensure_existing_tables(connection) -> None:  # type: ignore[no-untyped-def]
     if "messages" not in tables:
         connection.exec_driver_sql(
             """
-            CREATE TABLE messages (
+            CREATE TABLE IF NOT EXISTS messages (
                 id TEXT PRIMARY KEY,
                 session_id TEXT NOT NULL,
                 role TEXT NOT NULL,
@@ -321,7 +335,7 @@ def _ensure_existing_tables(connection) -> None:  # type: ignore[no-untyped-def]
     if "milestones" not in tables:
         connection.exec_driver_sql(
             """
-            CREATE TABLE milestones (
+            CREATE TABLE IF NOT EXISTS milestones (
                 id TEXT PRIMARY KEY,
                 kind TEXT NOT NULL,
                 note TEXT NOT NULL,
@@ -365,7 +379,7 @@ def _ensure_existing_tables(connection) -> None:  # type: ignore[no-untyped-def]
     if "consolidated_sessions" not in tables:
         connection.exec_driver_sql(
             """
-            CREATE TABLE consolidated_sessions (
+            CREATE TABLE IF NOT EXISTS consolidated_sessions (
                 session_id TEXT PRIMARY KEY,
                 consolidated_at TEXT NOT NULL,
                 source TEXT NOT NULL DEFAULT 'maintenance'
@@ -376,7 +390,7 @@ def _ensure_existing_tables(connection) -> None:  # type: ignore[no-untyped-def]
     if "session_memory_exports" not in tables:
         connection.exec_driver_sql(
             """
-            CREATE TABLE session_memory_exports (
+            CREATE TABLE IF NOT EXISTS session_memory_exports (
                 session_id TEXT PRIMARY KEY,
                 exported_at TEXT NOT NULL,
                 exported_user_count INTEGER NOT NULL DEFAULT 0

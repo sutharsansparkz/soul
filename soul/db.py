@@ -3,12 +3,11 @@ from __future__ import annotations
 import json
 import re
 import uuid
-from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import text
 from sqlalchemy.engine import Connection, Engine
 
 
@@ -40,28 +39,17 @@ _ENGINE_CACHE: dict[str, Engine] = {}
 
 
 def _get_engine(database: Path | str) -> Engine:
-    database_url = _engine_key(database)
-    if database_url not in _ENGINE_CACHE:
-        _ensure_parent(database_url)
-        engine = create_engine(database_url, future=True)
+    from soul.persistence import db as persistence_db
 
-        @event.listens_for(engine, "connect")
-        def _set_sqlite_pragmas(dbapi_conn, _connection_record):  # type: ignore[no-untyped-def]
-            cursor = dbapi_conn.cursor()
-            cursor.execute("PRAGMA foreign_keys = ON")
-            cursor.close()
-
-        _ENGINE_CACHE[database_url] = engine
-    return _ENGINE_CACHE[database_url]
+    global _ENGINE_CACHE
+    _ENGINE_CACHE = persistence_db._ENGINE_CACHE
+    return persistence_db.get_engine(database)
 
 
-@contextmanager
 def connect(database: Path | str) -> Iterator:
-    connection = _get_engine(database).connect()
-    try:
-        yield connection
-    finally:
-        connection.close()
+    from soul.persistence import db as persistence_db
+
+    return persistence_db.connect(database)
 
 
 def init_db(database: Path | str) -> None:
