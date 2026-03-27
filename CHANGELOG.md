@@ -1,7 +1,25 @@
 # CHANGELOG
 
 
+## v0.5.1 (2026-03-27)
+
+### Bug Fixes
+
+- Support Windows timezone loading in CI
+  ([`757a8d4`](https://github.com/sparkz-technology/soul/commit/757a8d4cd75ea566aaee4ae3edc760d769089ed2))
+
+### Chores
+
+- Make git hooks executable
+  ([`ded815e`](https://github.com/sparkz-technology/soul/commit/ded815eb7ee2f0cd0a39a590e1bb42b69691eedf))
+
+
 ## v0.5.0 (2026-03-27)
+
+### Chores
+
+- **release**: 0.5.0 [skip ci]
+  ([`fba12e6`](https://github.com/sparkz-technology/soul/commit/fba12e605157e93d1fc9c9a865641da49ad7d70e))
 
 ### Features
 
