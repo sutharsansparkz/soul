@@ -144,22 +144,34 @@ delete triggers, so it stays in sync automatically.
 Retrieval flow:
 
 1. Fetch up to `MEMORY_CANDIDATE_K` FTS matches.
-2. Normalize BM25 scores into a `0..1` semantic similarity signal.
-3. Optionally blend in local embedding cosine similarity when
-   `HYBRID_EMBEDDINGS=true`.
-4. Compute final rank:
+2. Normalize BM25 scores into a `0..1` similarity signal.
+3. Optionally blend in local embedding cosine similarity when hybrid
+   embeddings are enabled and available.
+4. Compute final rank using dynamic weights:
 
-`rank = semantic_similarity * HMS_SEMANTIC_WEIGHT + hms_score * HMS_SCORE_WEIGHT`
+`rank = semantic_component + hms_component + recency_bonus`
 
-When hybrid embeddings are enabled, the semantic term becomes a blend of
-normalized BM25 and cosine similarity before the final HMS weighting is applied.
+Important ranking details:
+
+- When embeddings are available, the retriever uses the configured
+  `HMS_SEMANTIC_WEIGHT` and `HMS_SCORE_WEIGHT`.
+- Without embeddings, it falls back to a simpler `0.40` semantic / `0.60` HMS
+  split.
+- Vivid or manually flagged memories get a small extra HMS-weight boost.
+- Recently observed memories can receive a small recency bonus for the first
+  week after `observed_at`.
+- Passive retrieval excludes cold memories. Explicit search commands include
+  them.
 
 Retrieval-time side effects:
 
-- increment `ref_count`
-- recompute HMS components
-- update `last_retrieved`
-- refresh tier and stored score fields
+- Prompt building is read-only. `ContextBuilder` retrieves with
+  `mutate_on_retrieve=False`, so assembling a prompt does not change memory
+  state.
+- Default interactive retrieval increments `ref_count`.
+- Default interactive retrieval recomputes HMS components.
+- Default interactive retrieval updates `last_retrieved`.
+- Default interactive retrieval refreshes tier and stored score fields.
 
 Passive retrieval excludes cold memories. Explicit search commands can include
 them.

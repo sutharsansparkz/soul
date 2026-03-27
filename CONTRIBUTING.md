@@ -16,12 +16,24 @@ pip install -e ".[dev]"
 
 3. Copy `.env.example` to `.env`.
 4. Set `OPENAI_API_KEY` before running commands that bootstrap the full
-   runtime.
+   runtime. Set `OPENAI_BASE_URL` only when you are using a non-default
+   OpenAI-compatible endpoint, and update `LLM_MODEL` / `MOOD_OPENAI_MODEL`
+   if your provider needs different model names.
 5. Initialize local state with:
 
 ```bash
 soul db init
 ```
+6. Run `soul config` if you want to confirm the resolved settings with secrets
+   redacted.
+
+Optional features:
+
+- Install `pip install -e ".[voice]"` before enabling `ENABLE_VOICE=true`.
+- Install `pip install -e ".[hybrid]"` before enabling
+  `HYBRID_EMBEDDINGS=true`.
+- Do not enable Telegram or voice until the matching credentials are present in
+  `.env`.
 
 ## Recommended Workflow
 

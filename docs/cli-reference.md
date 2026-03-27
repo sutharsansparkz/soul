@@ -15,12 +15,14 @@ python -m soul.cli
 ## Bootstrap And Introspection
 
 ```bash
+soul db
 soul db init
 soul db rebuild-fts
 soul config
 soul version
 ```
 
+- `soul db` with no subcommand prints help for the database command group.
 - `soul db init` creates runtime directories and initializes the SQLite schema.
 - `soul db rebuild-fts` rebuilds the episodic-memory FTS5 index.
 - `soul config` prints redacted runtime settings as JSON.
@@ -43,6 +45,8 @@ Notes:
 - `--voice` is feature-gated by `ENABLE_VOICE=true`.
 - `--voice-input` and `--record-seconds` use the same voice bridge as the live
   voice mode.
+- Voice startup validation requires the voice dependencies plus valid
+  `ELEVENLABS_*` credentials.
 
 ## Story And Memory
 
@@ -80,6 +84,8 @@ soul telegram-bot
 - `soul milestones` shows the relationship timeline.
 - `soul run-jobs` executes the enabled maintenance pipeline once.
 - `soul telegram-bot` starts polling Telegram for the configured allowed chat.
+- `soul telegram-bot` requires `ENABLE_TELEGRAM=true` plus valid
+  `TELEGRAM_*` settings.
 
 ## Debug
 
@@ -93,7 +99,11 @@ soul debug show-trace <trace-id>
 soul debug explain-memory <memory-id>
 ```
 
-All `debug` commands print JSON.
+Output style:
+
+- JSON: `last-turn`, `show-facts`, `show-trace`, `explain-memory`
+- rich tables or human-readable output: `show-mood`, `show-memories`,
+  `show-personality`
 
 ## In-Session Slash Commands
 
@@ -110,3 +120,5 @@ Inside `soul chat`:
 
 - `/save` stores a manual memory note for the current session.
 - `/voice on` and `/voice off` only work when voice support is enabled.
+- When recording is unavailable, `/voice on` still enables spoken replies and
+  falls back to typed input.

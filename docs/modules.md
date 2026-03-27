@@ -8,9 +8,8 @@
   export.
 - `soul/db.py`: compatibility-oriented database helper facade used by tests and
   some command paths.
-- (Legacy) `scripts/`: operational wrappers and compatibility scripts such as
-  `migrate_postgres.py`, `worker.py`, and `beat.py` existed in older versions,
-  but this repository currently does not include that directory.
+- `scripts/install-git-hooks.sh`: helper for installing the repository git
+  hooks locally.
 
 ## Package Map
 
@@ -58,7 +57,8 @@ LLM-related helper types and parsers.
 
 One-shot maintenance and background-job logic.
 
-- `jobs.py` is the current main entrypoint for maintenance execution.
+- `jobs.py` is the current main entrypoint for maintenance execution and the
+  auto-trigger throttle used after chat sessions.
 - `consolidation.py` processes completed sessions and extracts structured
   insights.
 - `decay.py` recomputes HMS memory state.
@@ -71,8 +71,10 @@ One-shot maintenance and background-job logic.
 Memory and user-story domain logic.
 
 - `episodic.py` exposes the SQLite-backed episodic-memory repository.
+- `fts.py` exposes lightweight helpers around the SQLite FTS index.
 - `scorer.py` defines HMS components, decay, tiers, and composite scoring.
-- `retriever.py` and `retrieval/` implement ranking and hybrid retrieval logic.
+- `retriever.py` is a compatibility layer; `retrieval/` contains the active
+  ranking and hybrid retrieval logic.
 - `embedder.py` optionally adds local sentence-transformer embeddings.
 - `user_story.py` defines the in-memory `UserStory` model and extraction rules.
 - `shared_language.py` contains recurring phrase logic.
@@ -132,6 +134,7 @@ The `tests/` tree is contract-heavy and covers:
 - HMS scoring and retrieval
 - story extraction and milestone generation
 - presence adapters
+- maintenance jobs and proactive delivery rules
 - security and safety guards around persistence helpers
 
 When the code and docs disagree, the tests are usually the best indicator of

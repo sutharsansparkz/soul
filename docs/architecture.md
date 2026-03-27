@@ -34,7 +34,8 @@ Most user-facing commands bootstrap the runtime in the following order:
 5. Hand off to the CLI command or presence surface.
 
 `soul config`, `soul version`, and `soul db init` are lighter-weight entry
-points and do not run the full chat bootstrap path.
+points and do not run the full chat bootstrap path. `soul db` with no
+subcommand prints group help.
 
 ## Conversation Flow
 
@@ -50,6 +51,8 @@ The main request path for `soul chat` and `PresenceRuntime` looks like this:
    - current personality drift hints
    - retrieved memory snippets from `episodic_memories`
    - recent message history
+   - prompt-time retrieval is read-only; `ContextBuilder` passes
+     `mutate_on_retrieve=False` so prompt assembly does not update memory state
 5. Send the assembled prompt to `LLMClient`, which streams the reply back to the
    terminal when applicable.
 6. Persist the assistant reply.
@@ -91,9 +94,10 @@ Depending on feature flags, a run can include:
 - proactive: refresh reach-out candidates and optionally deliver them through
   Telegram
 
-The repo also contains older operational scaffolding under `scripts/` and
-`docker-compose.yml`, but the primary documented path is the synchronous local
-maintenance runner.
+The same maintenance pipeline can also be auto-triggered after a chat session
+ends. `trigger_maintenance_if_due()` runs the work in a background thread and
+rate-limits it with `MAINTENANCE_AUTO_INTERVAL`, so the interactive CLI does
+not block on every session close.
 
 ## Storage Layout
 
@@ -125,8 +129,8 @@ SOUL keeps the runtime inspectable without a separate observability service:
 - `soul status` prints a human-readable summary of sessions, mood, features, and
   proactive candidates.
 - `soul config` prints a redacted settings snapshot.
-- `soul debug ...` commands return JSON for traces, moods, facts, memories, and
-  personality state.
+- `soul debug ...` commands expose stored traces, facts, moods, memories, and
+  personality state through a mix of JSON and rich table output.
 - failed generations also produce stored traces, which makes debugging easier
   after the fact.
 
@@ -134,6 +138,6 @@ SOUL keeps the runtime inspectable without a separate observability service:
 
 - The canonical runtime is SQLite-first. Some helper functions and compatibility
   tables remain for older code paths and tests.
-- The repository still includes older Docker, Celery, and PostgreSQL migration
-  scaffolding. Treat those as compatibility artifacts unless you are explicitly
-  refreshing that part of the project.
+- The repository still includes some compatibility-oriented helpers, but the
+  maintained runtime path is the local CLI plus SQLite workflow described in
+  these docs.

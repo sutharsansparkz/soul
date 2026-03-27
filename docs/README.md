@@ -7,6 +7,7 @@ and voice surfaces.
 ## Start Here
 
 - `README.md` for first-time setup and project overview
+- `.env.example` plus `soul/config.py` for the current configuration contract
 - `docs/cli-reference.md` for the fastest way to find commands
 - `docs/testing.md` if you are contributing or validating changes
 
@@ -30,3 +31,6 @@ and voice surfaces.
 The repo still contains some older compatibility and deployment scaffolding.
 Where that differs from the main runtime, these docs favor the current,
 tested CLI plus SQLite workflow rather than the older paths.
+
+When you are verifying config locally, `soul config` is the quickest way to see
+the resolved settings snapshot with secrets redacted.

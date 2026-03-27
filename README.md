@@ -27,7 +27,7 @@ At its core, SOUL combines:
   allowed Telegram chat.
 - `soul chat --voice` can record, transcribe, and optionally speak replies when
   voice dependencies are configured.
-- `soul debug ...` commands expose JSON traces, memory rows, mood snapshots, and
+- `soul debug ...` commands expose stored traces, facts, memories, moods, and
   personality state for debugging.
 
 ## Project Status
@@ -75,11 +75,20 @@ Optional extras:
 Copy `.env.example` to `.env`, then set at least:
 
 - `OPENAI_API_KEY`
-- `LLM_MODEL` if you do not want the default
+- `LLM_MODEL` and `MOOD_OPENAI_MODEL` if your provider needs non-default model
+  names
 - `SOUL_TIMEZONE` if you want local time-aware milestones and status output
 
-You can also point SOUL at any OpenAI-compatible endpoint with
-`OPENAI_BASE_URL`.
+Set `OPENAI_BASE_URL` only when you are targeting a non-default
+OpenAI-compatible endpoint. If you are using the default OpenAI API, leave it
+unset or comment it out.
+
+Optional features stay off by default. Only enable `ENABLE_VOICE=true` or
+`ENABLE_TELEGRAM=true` after you have configured the matching credentials and
+installed the required extras.
+
+Use `soul config` after editing `.env` if you want to verify the resolved
+runtime settings with secrets redacted.
 
 ### 4. Initialize the local runtime
 
@@ -111,22 +120,27 @@ Useful next commands:
 
 The most important configuration groups are:
 
-- Provider: `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `LLM_MODEL`,
-  `MOOD_OPENAI_MODEL`
+- Provider: `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `LLM_*`, `MOOD_OPENAI_*`
 - Storage: `DATABASE_URL`, `SOUL_DATA_DIR`, `SOUL_USER_ID`, `SOUL_TIMEZONE`
 - Feature flags: `ENABLE_TELEGRAM`, `ENABLE_VOICE`, `ENABLE_PROACTIVE`,
   `ENABLE_REFLECTION`, `ENABLE_DRIFT`, `ENABLE_BACKGROUND_JOBS`
 - Voice: `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`,
-  `VOICE_TRANSCRIPTION_MODEL`
+  `VOICE_TRANSCRIPTION_MODEL`, `VOICE_PLAYBACK_TIMEOUT`
 - Telegram: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_BASE_URL`
-- Retrieval and memory tuning: `MEMORY_RETRIEVAL_K`, `MEMORY_CANDIDATE_K`,
-  `HMS_*`, `HYBRID_*`
+- Retrieval and memory tuning: `MEMORY_*`, `HMS_*`, `HYBRID_*`
+- Drift, proactive, and maintenance tuning: `DRIFT_*`, `PROACTIVE_*`,
+  `MAINTENANCE_AUTO_INTERVAL`
 
 Notes:
 
 - Most user-facing commands go through startup validation, which means provider
   configuration must be present before commands like `soul chat` or
   `soul status` will run.
+- `ENABLE_VOICE=true` requires the voice dependencies plus valid
+  `ELEVENLABS_*` credentials.
+- `HYBRID_EMBEDDINGS=true` is only useful when the hybrid retrieval dependency
+  set is installed.
+- `soul config` prints the currently resolved settings with secrets redacted.
 - `get_settings()` is cached for the life of the process, so restart the CLI
   after changing environment variables.
 - Startup validation rejects obsolete legacy JSON state files in
@@ -147,7 +161,7 @@ Top-level commands:
 - `soul run-jobs` for one-shot maintenance execution
 - `soul telegram-bot` for Telegram polling
 - `soul db init` and `soul db rebuild-fts` for database bootstrap and FTS repair
-- `soul debug ...` for JSON debugging surfaces
+- `soul debug ...` for stored diagnostics and inspection helpers
 - `soul config` for redacted runtime configuration
 - `soul version` for the installed version string
 
@@ -189,7 +203,6 @@ Notes:
   `python -m pytest -q`.
 - `make lint` is currently a compile/import sanity check via `compileall`; it
   is not a style formatter or static-analysis suite.
-
 - Live-provider tests are marked with `@pytest.mark.live_llm` and should only be
   run intentionally with real provider credentials.
 
