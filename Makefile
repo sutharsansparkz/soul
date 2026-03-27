@@ -1,4 +1,4 @@
-SHELL := /bin/sh
+SHELL := sh
 PYTHON_RESOLVER := ./scripts/resolve-python.sh
 
 # Makefile command references:
@@ -9,7 +9,7 @@ PYTHON_RESOLVER := ./scripts/resolve-python.sh
 
 
 test:
-	@PYTHON_BIN=`sh $(PYTHON_RESOLVER)`; \
+	@PYTHON_BIN=`$(SHELL) $(PYTHON_RESOLVER)`; \
 	PYTHON_VERSION=`$$PYTHON_BIN -c 'import sys; print(".".join(map(str, sys.version_info[:3])))'`; \
 	if ! $$PYTHON_BIN -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then \
 		echo "test requires Python >= 3.11, but $$PYTHON_VERSION is installed." >&2; \
@@ -24,7 +24,7 @@ test:
 
 
 lint:
-	@PYTHON_BIN=`sh $(PYTHON_RESOLVER)`; \
+	@PYTHON_BIN=`$(SHELL) $(PYTHON_RESOLVER)`; \
 	PYTHON_VERSION=`$$PYTHON_BIN -c 'import sys; print(".".join(map(str, sys.version_info[:3])))'`; \
 	if ! $$PYTHON_BIN -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then \
 		echo "lint requires Python >= 3.11, but $$PYTHON_VERSION is installed." >&2; \
@@ -39,7 +39,7 @@ lint:
 
 .PHONY: run
 run:
-	@PYTHON_BIN=`sh $(PYTHON_RESOLVER)`; \
+	@PYTHON_BIN=`$(SHELL) $(PYTHON_RESOLVER)`; \
 	PYTHON_VERSION=`$$PYTHON_BIN -c 'import sys; print(".".join(map(str, sys.version_info[:3])))'`; \
 	if ! $$PYTHON_BIN -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then \
 		echo "run requires Python >= 3.11, but $$PYTHON_VERSION is installed." >&2; \

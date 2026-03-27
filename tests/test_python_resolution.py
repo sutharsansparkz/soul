@@ -1,23 +1,36 @@
 from __future__ import annotations
 
+import os
+import shutil
 import subprocess
 from pathlib import Path
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "resolve-python.sh"
+SHELL = shutil.which("sh") or shutil.which("bash")
+
+pytestmark = pytest.mark.skipif(
+    SHELL is None,
+    reason="resolve-python.sh tests require a POSIX shell on PATH",
+)
 
 
-def _write_executable(path: Path, content: str = "#!/bin/sh\nexit 0\n") -> None:
+def _write_executable(path: Path, content: str = "#!/usr/bin/env sh\nexit 0\n") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
     path.chmod(0o755)
 
 
 def _run_resolver(tmp_path: Path, *, extra_env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
-    env = {"PATH": "", **(extra_env or {})}
+    assert SHELL is not None
+    env = os.environ.copy()
+    env["PATH"] = ""
+    env.update(extra_env or {})
     return subprocess.run(
-        ["/bin/sh", str(SCRIPT)],
+        [SHELL, str(SCRIPT)],
         cwd=tmp_path,
         env=env,
         text=True,
