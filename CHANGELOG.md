@@ -1,7 +1,20 @@
 # CHANGELOG
 
 
+## v0.5.0 (2026-03-27)
+
+### Features
+
+- Add workspace skill templates and commands for enhanced project guidance
+  ([`9eada96`](https://github.com/sparkz-technology/soul/commit/9eada9631edc817d30d9dda746f6e07aa23d5eb2))
+
+
 ## v0.4.0 (2026-03-27)
+
+### Chores
+
+- **release**: 0.4.0 [skip ci]
+  ([`8e81728`](https://github.com/sparkz-technology/soul/commit/8e81728c46d84939a387ccbd28256209e779568b))
 
 ### Features
 
