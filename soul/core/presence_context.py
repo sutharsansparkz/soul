@@ -1,17 +1,14 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from datetime import datetime, timedelta, timezone, tzinfo
 
 from soul import db
 from soul.config import Settings
+from soul.core.timezone_utils import load_timezone_or_utc
 
 
-def runtime_timezone(settings: Settings) -> ZoneInfo:
-    try:
-        return ZoneInfo(settings.timezone_name)
-    except ZoneInfoNotFoundError:
-        return ZoneInfo("UTC")
+def runtime_timezone(settings: Settings) -> tzinfo:
+    return load_timezone_or_utc(settings.timezone_name)
 
 
 def runtime_now(settings: Settings, *, now: datetime | None = None) -> datetime:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from zoneinfo import ZoneInfoNotFoundError
 
 from soul.bootstrap.errors import (
     ConfigurationError,
@@ -16,6 +16,7 @@ from soul.bootstrap.errors import (
 )
 from soul.bootstrap.feature_registry import FeatureRegistry, build_feature_registry
 from soul.config import Settings
+from soul.core.timezone_utils import load_timezone
 from soul.persistence.db import connect, ensure_sqlite_url
 from soul.persistence.sqlite_setup import ensure_schema, find_obsolete_legacy_files
 
@@ -92,7 +93,7 @@ def _validate_config(settings: Settings) -> None:
         path.mkdir(parents=True, exist_ok=True)
 
     try:
-        ZoneInfo(settings.timezone_name)
+        load_timezone(settings.timezone_name)
     except ZoneInfoNotFoundError as exc:
         raise ConfigurationError(f"Invalid SOUL_TIMEZONE: {settings.timezone_name}") from exc
 
