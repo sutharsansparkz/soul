@@ -19,6 +19,8 @@ At its core, SOUL combines:
   terminal.
 - `soul chat` prints a compact per-turn trace so you can see what parts of the
   runtime are active.
+- GitHub Pages deployment is included for a lightweight project site published
+  from the `site/` directory.
 - `soul chat` can load repo-local `SKILL.md` instructions from your current
   workspace, similar to code agents that honor project guidance files.
 - `soul skills` lists built-in workspace skill templates and can scaffold them
@@ -130,6 +132,10 @@ Useful next commands:
 - `soul memories`
 - `soul story`
 - `soul run-jobs`
+
+To publish the project site with GitHub Pages, the repository includes
+`.github/workflows/pages.yml`, which deploys the static files under `site/`
+whenever `main` is updated.
 
 ## Configuration
 
