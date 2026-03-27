@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from soul.config import Settings
+from soul.core.skill_loader import WorkspaceSkillLoader
 from soul.core.soul_loader import Soul, compile_system_prompt
 from soul.core.mood_engine import MoodSnapshot
 from soul.memory.episodic import EpisodicMemoryRepository
@@ -21,12 +22,14 @@ class ContextBundle:
     memory_snippets: list[str]
     retrieved_memories: list[MemoryRecord]
     prompt_sections: list[str]
+    workspace_skill_files: list[str] = field(default_factory=list)
 
 
 class ContextBuilder:
     def __init__(self, settings: Settings, soul: Soul) -> None:
         self.settings = settings
         self.soul = soul
+        self.skill_loader = WorkspaceSkillLoader()
         self.messages = MessagesRepository(settings.database_url, user_id=settings.user_id)
         self.story_repo = UserFactsRepository(settings.database_url, user_id=settings.user_id)
         self.personality_repo = PersonalityStateRepository(settings.database_url, user_id=settings.user_id)
@@ -41,6 +44,7 @@ class ContextBuilder:
         personality_hint = self._personality_context()
         retrieved_memories = self._retrieve_memories(user_input)
         memory_snippets = format_memory_blocks(retrieved_memories[: self.settings.memory_retrieval_k])
+        workspace_skills = self.skill_loader.load()
         prompt_sections = ["mood", "soul_prompt"]
 
         system_parts = [
@@ -50,6 +54,9 @@ class ContextBuilder:
             "",
             compile_system_prompt(self.soul),
         ]
+        if workspace_skills.prompt_text:
+            prompt_sections.append("workspace_skill")
+            system_parts.extend(["", workspace_skills.prompt_text])
         if story_summary:
             prompt_sections.append("story")
             system_parts.extend(["", "[user_story]", story_summary])
@@ -71,6 +78,7 @@ class ContextBuilder:
             memory_snippets=memory_snippets,
             retrieved_memories=retrieved_memories,
             prompt_sections=prompt_sections,
+            workspace_skill_files=[str(path) for path in workspace_skills.files],
         )
 
     def _story_summary(self) -> str | None:

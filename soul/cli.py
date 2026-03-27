@@ -26,6 +26,7 @@ from soul.core.llm_client import LLMClient, LLMResult
 from soul.core.mood_engine import MoodEngine, MoodSnapshot
 from soul.core.presence_context import build_presence_context, runtime_now
 from soul.core.post_processor import PostProcessor
+from soul.core.skill_templates import get_builtin_skill_template, list_builtin_skill_templates, read_builtin_skill_template
 from soul.core.soul_loader import Soul, load_soul
 from soul.memory.episodic import EpisodicMemoryRepository
 from soul.memory.repositories.messages import MessagesRepository
@@ -49,10 +50,12 @@ app = typer.Typer(help="SOUL, an AI companion from your terminal.", add_completi
 memories_app = typer.Typer(help="Memory commands.", invoke_without_command=True, no_args_is_help=False)
 story_app = typer.Typer(help="User story commands.", invoke_without_command=True, no_args_is_help=False)
 db_app = typer.Typer(help="Database commands.", invoke_without_command=True, no_args_is_help=False)
+skills_app = typer.Typer(help="Workspace skill template commands.", invoke_without_command=True, no_args_is_help=False)
 debug_app = typer.Typer(help="Debug inspection commands.", invoke_without_command=True, no_args_is_help=False)
 app.add_typer(memories_app, name="memories")
 app.add_typer(story_app, name="story")
 app.add_typer(db_app, name="db")
+app.add_typer(skills_app, name="skills")
 app.add_typer(debug_app, name="debug")
 
 console = Console(width=120)
@@ -795,6 +798,44 @@ def memories_list(ctx: typer.Context) -> None:
         f"[dim]{tier_counts.get('cold', 0)} cold[/dim]  "
         f"[dim]{tier_counts.get('manual', 0)} manual[/dim]"
     )
+
+
+@skills_app.callback(invoke_without_command=True)
+def skills_list(ctx: typer.Context) -> None:
+    if ctx.invoked_subcommand is not None:
+        return
+    table = Table(title="Built-in Workspace Skills", box=box.SIMPLE_HEAVY)
+    table.add_column("Name", style="cyan", width=20)
+    table.add_column("Description", style="white")
+    for template in list_builtin_skill_templates():
+        table.add_row(template.name, template.description)
+    console.print(table)
+
+
+@skills_app.command("init")
+def skills_init(
+    template_name: str = typer.Argument(..., help="Built-in skill template name."),
+    directory: Path = typer.Option(Path("."), "--dir", help="Target workspace directory."),
+    force: bool = typer.Option(False, "--force", help="Overwrite an existing SKILL.md."),
+) -> None:
+    """Write a built-in SKILL.md template into a workspace."""
+    template = get_builtin_skill_template(template_name)
+    if template is None:
+        available = ", ".join(item.name for item in list_builtin_skill_templates())
+        console.print(f"[red]Unknown skill template:[/red] {template_name}")
+        console.print(f"[dim]Available templates: {available}[/dim]")
+        raise typer.Exit(code=1)
+
+    target_dir = directory.resolve()
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_file = target_dir / "SKILL.md"
+    if target_file.exists() and not force:
+        console.print(f"[red]Refusing to overwrite existing file:[/red] {target_file}")
+        console.print("[dim]Use --force if you want to replace it.[/dim]")
+        raise typer.Exit(code=1)
+
+    target_file.write_text(read_builtin_skill_template(template_name), encoding="utf-8")
+    console.print(f"[green]Wrote workspace skill.[/green] {target_file}")
 
 
 @memories_app.command("search")

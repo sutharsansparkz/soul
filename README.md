@@ -19,6 +19,10 @@ At its core, SOUL combines:
   terminal.
 - `soul chat` prints a compact per-turn trace so you can see what parts of the
   runtime are active.
+- `soul chat` can load repo-local `SKILL.md` instructions from your current
+  workspace, similar to code agents that honor project guidance files.
+- `soul skills` lists built-in workspace skill templates and can scaffold them
+  into a target directory.
 - `soul memories`, `soul story`, `soul drift`, `soul milestones`, and
   `soul status` let you inspect what the system has learned.
 - `soul run-jobs` executes the maintenance pipeline once for the current local
@@ -109,6 +113,17 @@ This creates:
 soul chat
 ```
 
+If you want workspace-specific behavior, place a `SKILL.md` in the current
+project root or a nested working directory. `soul chat` will load matching
+files from the workspace root down to your current directory, with deeper files
+taking precedence.
+
+To scaffold a built-in read-only explorer skill into a project:
+
+```bash
+soul skills init file-explorer --dir .
+```
+
 Useful next commands:
 
 - `soul status`
@@ -159,6 +174,7 @@ Top-level commands:
 - `soul milestones` for relationship timeline events
 - `soul status` for a runtime summary
 - `soul run-jobs` for one-shot maintenance execution
+- `soul skills` for listing or scaffolding built-in workspace skills
 - `soul telegram-bot` for Telegram polling
 - `soul db init` and `soul db rebuild-fts` for database bootstrap and FTS repair
 - `soul debug ...` for stored diagnostics and inspection helpers

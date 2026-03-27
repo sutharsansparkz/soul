@@ -44,6 +44,9 @@ include-package-data = true
 [tool.setuptools.packages.find]
 include = ["soul*"]
 
+[tool.setuptools.package-data]
+soul = ["templates/skills/*/SKILL.md"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
