@@ -1,4 +1,5 @@
 SHELL := /bin/sh
+PYTHON_RESOLVER := ./scripts/resolve-python.sh
 
 # Makefile command references:
 #   make test  - Run test suite with pytest (requires Python >= 3.11)
@@ -8,15 +9,7 @@ SHELL := /bin/sh
 
 
 test:
-	@PYTHON_BIN=""; \
-	if command -v python >/dev/null 2>&1; then \
-		PYTHON_BIN=python; \
-	elif command -v python3 >/dev/null 2>&1; then \
-		PYTHON_BIN=python3; \
-	else \
-		echo "test requires Python, but neither 'python' nor 'python3' was found on PATH." >&2; \
-		exit 127; \
-	fi; \
+	@PYTHON_BIN=`sh $(PYTHON_RESOLVER)`; \
 	PYTHON_VERSION=`$$PYTHON_BIN -c 'import sys; print(".".join(map(str, sys.version_info[:3])))'`; \
 	if ! $$PYTHON_BIN -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then \
 		echo "test requires Python >= 3.11, but $$PYTHON_VERSION is installed." >&2; \
@@ -31,15 +24,7 @@ test:
 
 
 lint:
-	@PYTHON_BIN=""; \
-	if command -v python >/dev/null 2>&1; then \
-		PYTHON_BIN=python; \
-	elif command -v python3 >/dev/null 2>&1; then \
-		PYTHON_BIN=python3; \
-	else \
-		echo "lint requires Python, but neither 'python' nor 'python3' was found on PATH." >&2; \
-		exit 127; \
-	fi; \
+	@PYTHON_BIN=`sh $(PYTHON_RESOLVER)`; \
 	PYTHON_VERSION=`$$PYTHON_BIN -c 'import sys; print(".".join(map(str, sys.version_info[:3])))'`; \
 	if ! $$PYTHON_BIN -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then \
 		echo "lint requires Python >= 3.11, but $$PYTHON_VERSION is installed." >&2; \
@@ -54,15 +39,7 @@ lint:
 
 .PHONY: run
 run:
-	@PYTHON_BIN=""; \
-	if command -v python >/dev/null 2>&1; then \
-		PYTHON_BIN=python; \
-	elif command -v python3 >/dev/null 2>&1; then \
-		PYTHON_BIN=python3; \
-	else \
-		echo "run requires Python, but neither 'python' nor 'python3' was found on PATH." >&2; \
-		exit 127; \
-	fi; \
+	@PYTHON_BIN=`sh $(PYTHON_RESOLVER)`; \
 	PYTHON_VERSION=`$$PYTHON_BIN -c 'import sys; print(".".join(map(str, sys.version_info[:3])))'`; \
 	if ! $$PYTHON_BIN -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then \
 		echo "run requires Python >= 3.11, but $$PYTHON_VERSION is installed." >&2; \
