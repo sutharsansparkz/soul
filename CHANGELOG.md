@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.6.1 (2026-03-27)
+
+### Bug Fixes
+
+- Support initial GitHub Pages enablement
+  ([`6ac60c1`](https://github.com/sparkz-technology/soul/commit/6ac60c1cda702e6aa4b4f27acfa7faeb481d7d96))
+
+
 ## v0.6.0 (2026-03-27)
 
 ### Bug Fixes
@@ -10,6 +18,11 @@
 
 - Support Windows shell portability in tests
   ([`8f8f193`](https://github.com/sparkz-technology/soul/commit/8f8f193718973d2ee16b6bbfc26ff91685750088))
+
+### Chores
+
+- **release**: 0.6.0 [skip ci]
+  ([`db84b6a`](https://github.com/sparkz-technology/soul/commit/db84b6a9f3e3bff95dee1be9b1bb3937a2c2ec11))
 
 ### Features
 
