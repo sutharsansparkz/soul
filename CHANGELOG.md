@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v0.6.0 (2026-03-27)
+
+### Bug Fixes
+
+- Prefer repo virtualenv in git hooks
+  ([`de326ac`](https://github.com/sparkz-technology/soul/commit/de326acc91b0dd2f20c3d58d54d4f561f05a69cf))
+
+- Support Windows shell portability in tests
+  ([`8f8f193`](https://github.com/sparkz-technology/soul/commit/8f8f193718973d2ee16b6bbfc26ff91685750088))
+
+### Features
+
+- Add GitHub Pages project site
+  ([`cc03cd3`](https://github.com/sparkz-technology/soul/commit/cc03cd3cab70698d85cfced083db9df4f3e1d51c))
+
+
 ## v0.5.1 (2026-03-27)
 
 ### Bug Fixes
@@ -12,6 +28,9 @@
 
 - Make git hooks executable
   ([`ded815e`](https://github.com/sparkz-technology/soul/commit/ded815eb7ee2f0cd0a39a590e1bb42b69691eedf))
+
+- **release**: 0.5.1 [skip ci]
+  ([`468f7fb`](https://github.com/sparkz-technology/soul/commit/468f7fbd9700510fd8a2b14a0e28a49ae207b3b2))
 
 
 ## v0.5.0 (2026-03-27)
