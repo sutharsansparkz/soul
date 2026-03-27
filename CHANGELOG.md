@@ -1,7 +1,20 @@
 # CHANGELOG
 
 
+## v0.4.0 (2026-03-27)
+
+### Features
+
+- Update configuration files and documentation for enhanced setup guidance
+  ([`a36047c`](https://github.com/sparkz-technology/soul/commit/a36047c97a68bc2deaa2c199a844f18f0c648870))
+
+
 ## v0.3.0 (2026-03-26)
+
+### Chores
+
+- **release**: 0.3.0 [skip ci]
+  ([`6c4d3d1`](https://github.com/sparkz-technology/soul/commit/6c4d3d1074f382998d0daa8581750e0fa805f058))
 
 
 ## v0.2.1 (2026-03-26)
