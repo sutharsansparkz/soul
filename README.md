@@ -137,6 +137,12 @@ To publish the project site with GitHub Pages, the repository includes
 `.github/workflows/pages.yml`, which deploys the static files under `site/`
 whenever `main` is updated.
 
+For the first deployment, GitHub Pages must already be enabled for the
+repository with `Settings -> Pages -> Source -> GitHub Actions`, or you can add
+a `PAGES_DEPLOY_TOKEN` repository secret so `actions/configure-pages@v5` can
+enable Pages automatically. GitHub's `GITHUB_TOKEN` can deploy an existing Pages
+site, but it cannot turn Pages on for the repository by itself.
+
 ## Configuration
 
 The most important configuration groups are:

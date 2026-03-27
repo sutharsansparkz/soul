@@ -11,6 +11,8 @@ def test_pages_workflow_exists_and_uses_official_actions():
 
     assert "name: Deploy Pages" in workflow
     assert "actions/configure-pages@v5" in workflow
+    assert "PAGES_DEPLOY_TOKEN" in workflow
+    assert "enablement:" in workflow
     assert "actions/upload-pages-artifact@v4" in workflow
     assert "actions/deploy-pages@v4" in workflow
     assert "path: site" in workflow
