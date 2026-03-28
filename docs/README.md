@@ -9,6 +9,8 @@ and voice surfaces.
 - `README.md` for first-time setup and project overview
 - `.env.example` plus `soul/config.py` for the current configuration contract
 - `docs/cli-reference.md` for the fastest way to find commands
+- `docs/release-process.md` for the release branch, semantic-release, and
+  branch-protection flow
 - `docs/testing.md` if you are contributing or validating changes
 
 ## Core Runtime Docs
