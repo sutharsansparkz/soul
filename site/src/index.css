@@ -36,6 +36,16 @@
     @apply bg-surface/40 border border-white/5 rounded-2xl backdrop-blur-xl;
     box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
   }
+
+  .pulse-card {
+    @apply bg-surface/50 border border-white/10 rounded-[1.75rem] backdrop-blur-xl transition-all duration-300;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+  }
+
+  .pulse-card:hover {
+    @apply border-accent/30 bg-surface/70;
+    transform: translateY(-6px);
+  }
   
   .terminal-window {
     @apply bg-[#0D0D0F] border border-white/10 rounded-xl overflow-hidden shadow-2xl;
@@ -48,6 +58,15 @@
   
   .btn-secondary {
     @apply px-8 py-4 bg-white/5 border border-white/10 hover:border-accent/50 text-white font-bold rounded-full transition-all backdrop-blur-sm;
+  }
+
+  .status-chip {
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 text-sm font-bold text-white/90 backdrop-blur-sm transition-all;
+  }
+
+  .status-chip:hover {
+    @apply border-accent/40 text-accent;
+    transform: translateY(-2px);
   }
 }
 

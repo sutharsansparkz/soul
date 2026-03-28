@@ -143,6 +143,24 @@ a `PAGES_DEPLOY_TOKEN` repository secret so `actions/configure-pages@v5` can
 enable Pages automatically. GitHub's `GITHUB_TOKEN` can deploy an existing Pages
 site, but it cannot turn Pages on for the repository by itself.
 
+## Release Process
+
+SOUL publishes package releases from `main` only. The repository's
+`.github/workflows/release.yml` workflow runs Python Semantic Release after a
+merge to `main`, updates the version files plus `CHANGELOG.md`, creates a git
+tag, creates a GitHub Release, and uploads the built `dist/` artifacts.
+
+The intended flow is:
+
+- open pull requests into `main`
+- let the test workflow pass before merging
+- merge to `main`
+- allow semantic-release to cut the release automatically
+
+Avoid manually bumping versions on feature branches or deleting `CHANGELOG.md`,
+because both are managed by the release automation. For the maintainer checklist
+and branch protection settings, see `docs/release-process.md`.
+
 ## Configuration
 
 The most important configuration groups are:

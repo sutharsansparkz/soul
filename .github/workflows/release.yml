@@ -4,6 +4,11 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+
+concurrency:
+  group: semantic-release
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -11,14 +16,45 @@ jobs:
     permissions:
       id-token: write
       contents: write
-    
+    outputs:
+      released: ${{ steps.release.outputs.released || 'false' }}
+      tag: ${{ steps.release.outputs.tag }}
+
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+      - name: Checkout release branch
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          
-      - name: Python Semantic Release
-        uses: python-semantic-release/python-semantic-release@v9.15.2
+          ref: ${{ github.ref_name }}
+
+      - name: Force checkout to workflow SHA
+        run: git reset --hard ${{ github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Run semantic release
+        id: release
+        uses: python-semantic-release/python-semantic-release@v10.5.3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          git_committer_name: "github-actions"
+          git_committer_email: "actions@users.noreply.github.com"
+
+      - name: Upload release assets to GitHub Release
+        if: steps.release.outputs.released == 'true'
+        uses: python-semantic-release/publish-action@v10.5.3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ steps.release.outputs.tag }}
+
+      - name: Upload built distributions
+        if: steps.release.outputs.released == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ steps.release.outputs.tag }}
+          path: dist
+          if-no-files-found: error

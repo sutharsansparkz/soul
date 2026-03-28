@@ -55,6 +55,8 @@ markers = [
 ]
 
 [tool.semantic_release]
+commit_parser = "conventional"
+tag_format = "v{version}"
 version_toml = [
     "pyproject.toml:project.version"
 ]
@@ -63,3 +65,24 @@ version_variables = [
 ]
 build_command = "python -m pip install build && python -m build"
 commit_message = "chore(release): {version} [skip ci]"
+
+[tool.semantic_release.branches.main]
+match = "^main$"
+prerelease = false
+
+[tool.semantic_release.commit_parser_options]
+minor_tags = ["feat"]
+patch_tags = ["fix", "perf"]
+parse_squash_commits = true
+ignore_merge_commits = true
+
+[tool.semantic_release.changelog]
+mode = "update"
+insertion_flag = "<!-- version list -->"
+exclude_commit_patterns = [
+    '''chore\(release\): .+''',
+    '''Merged? .*''',
+]
+
+[tool.semantic_release.changelog.default_templates]
+changelog_file = "CHANGELOG.md"

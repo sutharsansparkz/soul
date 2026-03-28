@@ -1,5 +1,6 @@
 # CHANGELOG
 
+<!-- version list -->
 
 ## v0.6.2 (2026-03-28)
 
@@ -161,7 +162,7 @@ LLM backend - Remove Anthropic SDK dependency entirely (llm_client.py, requireme
 
 Bug fixes - mood_engine.py: MODEL_LABEL_MAP corrected to the exact 7 labels output by
   cardiffnlp/twitter-roberta-base-emotion; disgust was missing (silently discarded) and 7 dead
-  go-emotions entries removed - cli.py: _next_milestone_label condition was inverted — 100th-message
+  go-emotions entries removed - cli.py: _next_milestone_label condition was inverted -- 100th-message
   countdown now shows only while total_messages < 100 and the milestone is not yet recorded -
   mood_engine.py + config.py: MOOD_MODEL_ENABLED defaults to True; emits a one-time UserWarning when
   transformers is absent instead of silently degrading with no indication - consolidate.py: warning
