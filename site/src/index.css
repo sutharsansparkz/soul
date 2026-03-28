@@ -36,6 +36,61 @@
     @apply bg-surface/40 border border-white/5 rounded-2xl backdrop-blur-xl;
     box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
   }
+
+  .logo-badge {
+    @apply w-10 h-10 rounded-xl border border-white/10 bg-white/[0.04] flex items-center justify-center shrink-0 overflow-hidden;
+  }
+
+  .logo-image-header {
+    @apply w-9 h-9 object-contain;
+    transform: scale(1.18);
+  }
+
+  .logo-image-footer {
+    @apply w-10 h-10 object-contain;
+    transform: scale(1.18);
+  }
+
+  .repo-header-pill {
+    @apply inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-white/85 transition-all;
+  }
+
+  .repo-header-pill:hover {
+    @apply border-accent/30 bg-accent/10;
+    transform: translateY(-2px);
+  }
+
+  .repo-footer-link {
+    @apply inline-flex items-center gap-2 mt-3 text-xs font-black uppercase tracking-[0.14em] text-text-muted transition-colors;
+  }
+
+  .repo-footer-link:hover {
+    @apply text-accent;
+  }
+
+  .mobile-menu-button {
+    @apply inline-flex items-center justify-center w-11 h-11 rounded-2xl border border-white/10 bg-white/[0.04] text-white/90 transition-all;
+  }
+
+  .mobile-menu-button:hover {
+    @apply border-accent/30 text-accent;
+  }
+
+  .mobile-menu-panel {
+    @apply rounded-3xl border border-white/10 bg-bg/95 backdrop-blur-2xl p-4 shadow-2xl;
+  }
+
+  .mobile-menu-link {
+    @apply flex items-center justify-between rounded-2xl border border-transparent px-4 py-3 text-sm font-black uppercase tracking-[0.18em] text-white/88 transition-all;
+  }
+
+  .mobile-menu-link:hover {
+    @apply border-accent/20 bg-accent/10 text-accent;
+  }
+
+  .mobile-menu-cta {
+    @apply inline-flex items-center justify-center mt-5 w-full;
+  }
   
   .terminal-window {
     @apply bg-[#0D0D0F] border border-white/10 rounded-xl overflow-hidden shadow-2xl;
