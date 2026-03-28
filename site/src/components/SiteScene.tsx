@@ -1,7 +1,7 @@
 import {Canvas, useFrame} from "@react-three/fiber";
 import {Float, MeshDistortMaterial, Sphere} from "@react-three/drei";
 import {AnimatePresence, motion, useMotionValue, useSpring} from "motion/react";
-import {Command, Terminal} from "lucide-react";
+import {Command} from "lucide-react";
 import {Suspense, useEffect, useRef, useState} from "react";
 import * as THREE from "three";
 

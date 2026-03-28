@@ -25,11 +25,14 @@ def test_pages_site_has_core_project_content():
     index_html = (ROOT / "site" / "index.html").read_text(encoding="utf-8")
     app_source = (ROOT / "site" / "src" / "App.tsx").read_text(encoding="utf-8")
     hero_source = (ROOT / "site" / "src" / "components" / "HeroSection.tsx").read_text(encoding="utf-8")
+    install_section_source = (ROOT / "site" / "src" / "components" / "InstallSection.tsx").read_text(encoding="utf-8")
+    install_terminal_source = (ROOT / "site" / "src" / "components" / "InstallTerminal.tsx").read_text(encoding="utf-8")
     navbar_source = (ROOT / "site" / "src" / "components" / "NavBar.tsx").read_text(encoding="utf-8")
+    site_scene_source = (ROOT / "site" / "src" / "components" / "SiteScene.tsx").read_text(encoding="utf-8")
     footer_source = (ROOT / "site" / "src" / "components" / "SiteFooter.tsx").read_text(encoding="utf-8")
     repo_hook = (ROOT / "site" / "src" / "hooks" / "useRepoSnapshot.ts").read_text(encoding="utf-8")
+    install_script = (ROOT / "site" / "public" / "install.sh").read_text(encoding="utf-8")
     entrypoint = (ROOT / "site" / "src" / "main.tsx").read_text(encoding="utf-8")
-    combined_source = "\n".join((app_source, hero_source, navbar_source, footer_source, repo_hook))
 
     assert "<title>SOUL | Terminal-first AI Companion</title>" in index_html
     assert '<div id="root"></div>' in index_html
@@ -39,7 +42,9 @@ def test_pages_site_has_core_project_content():
     assert 'const GITHUB_REPOSITORY = "sparkz-technology/soul"' in repo_hook
     assert 'export const GITHUB_REPOSITORY_URL = `https://github.com/${GITHUB_REPOSITORY}`' in repo_hook
     assert "https://api.github.com/repos/" in repo_hook
+    assert "InstallSection" in app_source
     assert "/tree/main/docs" in navbar_source
+    assert "InstallTerminal" not in hero_source
     assert 'src="/logo.png"' in navbar_source
     assert 'src="/logo.png"' in footer_source
     assert "repo-header-pill" in navbar_source
@@ -48,6 +53,18 @@ def test_pages_site_has_core_project_content():
     assert "stargazers" in navbar_source
     assert "Contributors {repoSnapshot.contributorCount}:" in footer_source
     assert "Contributors" in footer_source
+    assert "One-Line Install" not in site_scene_source
+    assert "navigator.clipboard.writeText" not in site_scene_source
+    assert 'id="install"' in install_section_source
+    assert "InstallTerminal" in install_section_source
+    assert "Start from one command" in install_section_source
+    assert "One-Line Install" in install_terminal_source
+    assert "navigator.clipboard.writeText" in install_terminal_source
+    assert "install.sh" in install_terminal_source
+    assert "latest SOUL release" in install_terminal_source
+    assert "releases/latest" in install_script
+    assert "soul db init" in install_script
+    assert "soul chat" in install_script
     assert "import './index.css';" in entrypoint
 
 
@@ -56,6 +73,7 @@ def test_pages_site_support_files_exist():
     assert (ROOT / "site" / "public" / "404.html").exists()
     assert (ROOT / "site" / "public" / ".nojekyll").exists()
     assert (ROOT / "site" / "public" / "logo.png").exists()
+    assert (ROOT / "site" / "public" / "install.sh").exists()
 
 
 def test_site_component_files_stay_under_250_lines():

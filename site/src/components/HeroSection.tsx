@@ -13,8 +13,8 @@ export const HeroSection = () => {
   const opacity = useTransform(scrollY, [0, 300], [1, 0]);
 
   return (
-    <header ref={heroRef} className="relative pt-48 pb-32 px-8 overflow-hidden">
-      <div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-20 items-center">
+    <header ref={heroRef} className="relative min-h-[100svh] px-8 pt-28 pb-14 md:pt-32 md:pb-16 flex items-center overflow-hidden">
+      <div className="w-full max-w-7xl mx-auto grid lg:grid-cols-2 gap-20 items-center">
         <motion.div style={{y: y1, opacity}}>
           <motion.div
             initial={{opacity: 0, scale: 0.8}}
