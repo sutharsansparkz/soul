@@ -4,16 +4,12 @@
  */
 
 import { motion, useScroll, useTransform, useSpring, useMotionValue, AnimatePresence } from "motion/react";
-import React, { startTransition, useState, useEffect, useRef, ReactNode, MouseEvent as ReactMouseEvent, Suspense } from "react";
+import React, { useState, useEffect, useRef, ReactNode, MouseEvent as ReactMouseEvent, Suspense } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Float, MeshDistortMaterial, Sphere, MeshWobbleMaterial } from "@react-three/drei";
 import * as THREE from "three";
 import { 
   Github, 
-  Star,
-  GitFork,
-  Users,
-  Tag,
   Terminal, 
   Database, 
   Brain, 
@@ -25,108 +21,8 @@ import {
   Activity,
   Zap,
   Sparkles,
-  Command,
-  ArrowUpRight
+  Command
 } from "lucide-react";
-
-const GITHUB_REPOSITORY = "sparkz-technology/soul";
-const GITHUB_REPOSITORY_URL = `https://github.com/${GITHUB_REPOSITORY}`;
-const GITHUB_REPOSITORY_API_URL = `https://api.github.com/repos/${GITHUB_REPOSITORY}`;
-
-type GitHubRepoResponse = {
-  stargazers_count?: number;
-  forks_count?: number;
-  open_issues_count?: number;
-  pushed_at?: string;
-};
-
-type GitHubReleaseResponse = {
-  tag_name?: string;
-  html_url?: string;
-  published_at?: string;
-};
-
-type GitHubContributorResponse = Array<{
-  login?: string;
-}>;
-
-type GitHubSnapshot = {
-  latestVersion: string;
-  releaseUrl: string;
-  stars: string;
-  forks: string;
-  contributors: string;
-  issues: string;
-  lastReleaseLabel: string;
-  lastPushLabel: string;
-};
-
-const FALLBACK_GITHUB_SNAPSHOT: GitHubSnapshot = {
-  latestVersion: "latest",
-  releaseUrl: `${GITHUB_REPOSITORY_URL}/releases`,
-  stars: "Live",
-  forks: "Open",
-  contributors: "Growing",
-  issues: "Tracked",
-  lastReleaseLabel: "Pulled from GitHub releases",
-  lastPushLabel: "Repo activity on GitHub",
-};
-
-const formatCompactNumber = (value: number | null | undefined) => {
-  if (typeof value !== "number" || Number.isNaN(value)) {
-    return "n/a";
-  }
-
-  return new Intl.NumberFormat("en", {
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(value);
-};
-
-const formatRelativeLabel = (value: string | null | undefined, prefix: string) => {
-  if (!value) {
-    return `${prefix} via GitHub`;
-  }
-
-  const parsed = Date.parse(value);
-  if (Number.isNaN(parsed)) {
-    return `${prefix} via GitHub`;
-  }
-
-  const elapsed = Math.max(0, Date.now() - parsed);
-  const day = 24 * 60 * 60 * 1000;
-  const month = 30 * day;
-  const year = 365 * day;
-
-  if (elapsed < day) {
-    return `${prefix} today`;
-  }
-
-  if (elapsed < month) {
-    return `${prefix} ${Math.round(elapsed / day)}d ago`;
-  }
-
-  if (elapsed < year) {
-    return `${prefix} ${Math.round(elapsed / month)}mo ago`;
-  }
-
-  return `${prefix} ${Math.round(elapsed / year)}y ago`;
-};
-
-const loadGitHubJson = async <T,>(url: string, signal: AbortSignal): Promise<T | null> => {
-  const response = await fetch(url, {
-    headers: {
-      Accept: "application/vnd.github+json",
-    },
-    signal,
-  });
-
-  if (!response.ok) {
-    return null;
-  }
-
-  return response.json() as Promise<T>;
-};
 
 // --- Advanced Components ---
 
@@ -520,34 +416,6 @@ const ParallaxCTA = () => {
   );
 };
 
-const PulseCard = ({
-  icon: Icon,
-  label,
-  value,
-  detail,
-  href,
-}: {
-  icon: any;
-  label: string;
-  value: string;
-  detail: string;
-  href: string;
-}) => {
-  return (
-    <MagneticLink href={href} className="pulse-card group block p-6 md:p-7">
-      <div className="flex items-center justify-between mb-6">
-        <div className="w-12 h-12 rounded-2xl bg-accent-muted border border-accent/20 flex items-center justify-center text-accent">
-          <Icon className="w-5 h-5" />
-        </div>
-        <ArrowUpRight className="w-5 h-5 text-text-muted group-hover:text-accent transition-colors" />
-      </div>
-      <div className="text-3xl lg:text-4xl font-black tracking-tight text-white mb-2">{value}</div>
-      <div className="text-xs font-black uppercase tracking-[0.22em] text-accent/70 mb-3">{label}</div>
-      <p className="text-sm text-text-muted leading-relaxed">{detail}</p>
-    </MagneticLink>
-  );
-};
-
 export default function App() {
   const { scrollYProgress } = useScroll();
   const scaleX = useSpring(scrollYProgress, { stiffness: 100, damping: 30, restDelta: 0.001 });
@@ -556,81 +424,6 @@ export default function App() {
   const { scrollY } = useScroll();
   const y1 = useTransform(scrollY, [0, 500], [0, 200]);
   const opacity = useTransform(scrollY, [0, 300], [1, 0]);
-  const [githubSnapshot, setGithubSnapshot] = useState(FALLBACK_GITHUB_SNAPSHOT);
-
-  useEffect(() => {
-    const controller = new AbortController();
-
-    const loadProjectPulse = async () => {
-      try {
-        const [repoData, releaseData, contributorData] = await Promise.all([
-          loadGitHubJson<GitHubRepoResponse>(GITHUB_REPOSITORY_API_URL, controller.signal),
-          loadGitHubJson<GitHubReleaseResponse>(`${GITHUB_REPOSITORY_API_URL}/releases/latest`, controller.signal),
-          loadGitHubJson<GitHubContributorResponse>(`${GITHUB_REPOSITORY_API_URL}/contributors?per_page=100&anon=1`, controller.signal),
-        ]);
-
-        if (controller.signal.aborted) {
-          return;
-        }
-
-        startTransition(() => {
-          setGithubSnapshot({
-            latestVersion: releaseData?.tag_name ?? FALLBACK_GITHUB_SNAPSHOT.latestVersion,
-            releaseUrl: releaseData?.html_url ?? FALLBACK_GITHUB_SNAPSHOT.releaseUrl,
-            stars: repoData ? formatCompactNumber(repoData.stargazers_count) : FALLBACK_GITHUB_SNAPSHOT.stars,
-            forks: repoData ? formatCompactNumber(repoData.forks_count) : FALLBACK_GITHUB_SNAPSHOT.forks,
-            contributors:
-              contributorData && contributorData.length > 0
-                ? `${contributorData.length}+`
-                : FALLBACK_GITHUB_SNAPSHOT.contributors,
-            issues: repoData ? formatCompactNumber(repoData.open_issues_count) : FALLBACK_GITHUB_SNAPSHOT.issues,
-            lastReleaseLabel: formatRelativeLabel(releaseData?.published_at, "Released"),
-            lastPushLabel: formatRelativeLabel(repoData?.pushed_at, "Updated"),
-          });
-        });
-      } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") {
-          return;
-        }
-        console.warn("Unable to load live GitHub project data.", error);
-      }
-    };
-
-    void loadProjectPulse();
-
-    return () => controller.abort();
-  }, []);
-
-  const projectPulse = [
-    {
-      icon: Tag,
-      label: "Latest Release",
-      value: githubSnapshot.latestVersion,
-      detail: githubSnapshot.lastReleaseLabel,
-      href: githubSnapshot.releaseUrl,
-    },
-    {
-      icon: Star,
-      label: "GitHub Stars",
-      value: githubSnapshot.stars,
-      detail: "Community signal from the repository",
-      href: `${GITHUB_REPOSITORY_URL}/stargazers`,
-    },
-    {
-      icon: Users,
-      label: "Contributors",
-      value: githubSnapshot.contributors,
-      detail: "People shaping SOUL in the open",
-      href: `${GITHUB_REPOSITORY_URL}/graphs/contributors`,
-    },
-    {
-      icon: GitFork,
-      label: "Forks / Issues",
-      value: `${githubSnapshot.forks} / ${githubSnapshot.issues}`,
-      detail: githubSnapshot.lastPushLabel,
-      href: `${GITHUB_REPOSITORY_URL}/issues`,
-    },
-  ];
 
   return (
     <div className="min-h-screen relative cursor-none">
@@ -699,23 +492,6 @@ export default function App() {
             >
               SOUL is a persistent companion that lives in your terminal. It remembers your past, adapts to your mood, and evolves over time.
             </motion.p>
-
-            <motion.div
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.72 }}
-              className="flex flex-wrap gap-3 mb-10"
-            >
-              <MagneticLink href={githubSnapshot.releaseUrl} className="status-chip">
-                Latest release {githubSnapshot.latestVersion}
-              </MagneticLink>
-              <MagneticLink href={`${GITHUB_REPOSITORY_URL}/stargazers`} className="status-chip">
-                {githubSnapshot.stars} stars
-              </MagneticLink>
-              <MagneticLink href={`${GITHUB_REPOSITORY_URL}/graphs/contributors`} className="status-chip">
-                {githubSnapshot.contributors} contributors
-              </MagneticLink>
-            </motion.div>
             
             <motion.div 
               initial={{ opacity: 0, y: 20 }}
@@ -723,11 +499,8 @@ export default function App() {
               transition={{ delay: 0.8 }}
               className="flex flex-wrap gap-6"
             >
-              <MagneticButton href={GITHUB_REPOSITORY_URL} className="btn-primary flex items-center gap-3">
+              <MagneticButton href="https://github.com/sparkz-technology/soul" className="btn-primary flex items-center gap-3">
                 View Repository <Github className="w-6 h-6" />
-              </MagneticButton>
-              <MagneticButton href={githubSnapshot.releaseUrl} className="btn-secondary flex items-center gap-3">
-                Latest Release <Tag className="w-6 h-6" />
               </MagneticButton>
               <a href="#features" className="btn-secondary flex items-center gap-3 group">
                 Explore Features <ArrowRight className="w-6 h-6 group-hover:translate-x-2 transition-transform" />
@@ -744,49 +517,20 @@ export default function App() {
 
       {/* Stats Section */}
       <section className="py-20 border-y border-white/5 bg-white/[0.02]">
-        <div className="max-w-7xl mx-auto px-8">
-          <RevealOnScroll>
-            <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-6 mb-14">
-              <div>
-                <h2 className="text-sm font-black uppercase tracking-[0.4em] text-accent mb-4">
-                  Project Pulse
-                </h2>
-                <p className="text-4xl lg:text-5xl font-black tracking-tighter max-w-3xl">
-                  Live GitHub signals, release version, and contribution momentum.
-                </p>
-              </div>
-              <MagneticLink
-                href={`${GITHUB_REPOSITORY_URL}/releases`}
-                className="inline-flex items-center gap-2 text-sm font-black uppercase tracking-[0.18em] text-text-muted hover:text-accent transition-colors"
-              >
-                Release Feed <ArrowUpRight className="w-4 h-4" />
-              </MagneticLink>
-            </div>
-          </RevealOnScroll>
-
-          <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-6">
-            {projectPulse.map((stat, i) => (
-              <RevealOnScroll key={stat.label} delay={i * 0.08}>
-                <PulseCard {...stat} />
-              </RevealOnScroll>
-            ))}
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-12 mt-16">
-            {[
-              { label: "Memory", value: "SQLite" },
-              { label: "Interface", value: "Terminal" },
-              { label: "Personality", value: "Dynamic" },
-              { label: "Privacy", value: "Local-First" }
-            ].map((stat, i) => (
+        <div className="max-w-7xl mx-auto px-8 grid grid-cols-2 md:grid-cols-4 gap-12">
+          {[
+            { label: "Memory", value: "SQLite" },
+            { label: "Interface", value: "Terminal" },
+            { label: "Personality", value: "Dynamic" },
+            { label: "Privacy", value: "Local-First" }
+          ].map((stat, i) => (
             <RevealOnScroll key={i} delay={i * 0.1}>
               <div className="text-center group">
                 <div className="text-3xl font-black text-white mb-2 group-hover:text-accent transition-colors">{stat.value}</div>
                 <div className="text-xs font-bold uppercase tracking-widest text-accent/60 group-hover:text-accent transition-colors">{stat.label}</div>
               </div>
             </RevealOnScroll>
-            ))}
-          </div>
+          ))}
         </div>
       </section>
 
@@ -849,7 +593,7 @@ export default function App() {
           </div>
           
           <div className="text-center text-text-muted text-sm font-medium">
-            © 2026 SOUL Project. Latest release {githubSnapshot.latestVersion}. Built for the terminal-native generation.
+            © 2026 SOUL Project. Built for the terminal-native generation.
           </div>
           
           <div className="flex justify-center md:justify-end gap-8 text-sm font-black uppercase tracking-widest text-text-muted">

@@ -31,11 +31,7 @@ def test_pages_site_has_core_project_content():
     assert '/src/main.tsx' in index_html
     assert "persistent companion that lives in your terminal".lower() in app_source.lower()
     assert "https://github.com/sparkz-technology/soul" in app_source
-    assert "https://api.github.com/repos/" in app_source
-    assert 'const GITHUB_REPOSITORY = "sparkz-technology/soul"' in app_source
     assert "/tree/main/docs" in app_source
-    assert "Latest Release" in app_source
-    assert "Contributors" in app_source
     assert "import './index.css';" in entrypoint
 
 
