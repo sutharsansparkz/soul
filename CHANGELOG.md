@@ -157,7 +157,7 @@ Co-authored-by: Ona <no-reply@ona.com>
 LLM backend - Remove Anthropic SDK dependency entirely (llm_client.py, requirements.txt,
   pyproject.toml) - Single OpenAI-compatible backend via the openai package - Add OPENAI_BASE_URL
   setting so any compatible endpoint works (Ollama, LM Studio, Together AI, Azure OpenAI, etc.) -
-  LLM_MODEL default changed from claude-sonnet-4-6 to gpt-4o - Remove FALLBACK_LLM_MODEL -- there is
+  LLM_MODEL default changed from claude-sonnet-4-6 to gpt-4o - Remove FALLBACK_LLM_MODEL — there is
   now one model, one provider
 
 Bug fixes - mood_engine.py: MODEL_LABEL_MAP corrected to the exact 7 labels output by
