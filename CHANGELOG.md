@@ -2,6 +2,17 @@
 
 <!-- version list -->
 
+## v1.1.0 (2026-03-28)
+
+### Features
+
+- Add install section to landing page
+  ([`4ca3051`](https://github.com/sparkz-technology/soul/commit/4ca30512331e4661fb36aea1a6852c1ebfcfea0e))
+
+- Polish site navigation and branding
+  ([`e07594c`](https://github.com/sparkz-technology/soul/commit/e07594c9531c7a1bcc4319431e0daedc489b4202))
+
+
 ## v1.0.0 (2026-03-28)
 
 
