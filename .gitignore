@@ -17,6 +17,11 @@ dist/
 *.pyd
 *.egg-info/
 
+# Frontend dependencies and local build caches
+node_modules/
+.vite/
+*.tsbuildinfo
+
 # Runtime state - generated locally, never committed
 soul_data/db/*.db
 soul_data/db/*.sqlite

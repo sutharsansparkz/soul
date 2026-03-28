@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SOUL | Redirecting</title>
+    <script>
+      const segments = window.location.pathname.split("/").filter(Boolean);
+      const base = segments.length > 0 ? `/${segments[0]}/` : "/";
+      window.location.replace(base);
+    </script>
+    <meta http-equiv="refresh" content="0; url=./" />
+  </head>
+  <body>
+    <p>Redirecting to the SOUL homepage...</p>
+  </body>
+</html>

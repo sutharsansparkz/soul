@@ -1,0 +1,81 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  
+  --color-bg: #0A0A0B;
+  --color-surface: #141416;
+  --color-border: #262629;
+  --color-accent: #FF6321;
+  --color-accent-muted: rgba(255, 99, 33, 0.1);
+  --color-text-muted: #8E9299;
+}
+
+@layer base {
+  body {
+    @apply bg-bg text-white font-sans antialiased selection:bg-accent selection:text-white overflow-x-hidden;
+  }
+}
+
+.grain {
+  position: fixed;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background-image: url("https://grainy-gradients.vercel.app/noise.svg");
+  opacity: 0.05;
+  pointer-events: none;
+  z-index: 100;
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-surface/40 border border-white/5 rounded-2xl backdrop-blur-xl;
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  }
+  
+  .terminal-window {
+    @apply bg-[#0D0D0F] border border-white/10 rounded-xl overflow-hidden shadow-2xl;
+    perspective: 1000px;
+  }
+  
+  .btn-primary {
+    @apply px-8 py-4 bg-accent hover:bg-accent/90 text-white font-bold rounded-full transition-all relative overflow-hidden;
+  }
+  
+  .btn-secondary {
+    @apply px-8 py-4 bg-white/5 border border-white/10 hover:border-accent/50 text-white font-bold rounded-full transition-all backdrop-blur-sm;
+  }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  50% { transform: translateY(-20px) rotate(5deg); }
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.text-glow {
+  text-shadow: 0 0 20px rgba(255, 99, 33, 0.3);
+}
+
+@keyframes scanline {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+
+.scanline {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(to bottom, transparent, rgba(255, 99, 33, 0.05), transparent);
+  animation: scanline 8s linear infinite;
+  pointer-events: none;
+}

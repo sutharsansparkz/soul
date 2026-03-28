@@ -27,6 +27,10 @@ def _write_executable(path: Path, content: str = "#!/usr/bin/env sh\nexit 0\n") 
 def _run_resolver(tmp_path: Path, *, extra_env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     assert SHELL is not None
     env = os.environ.copy()
+    # Keep shell-discovery compatibility while preventing the caller's active
+    # virtualenv from changing resolver behavior in isolated tmp-path tests.
+    env.pop("SOUL_PYTHON_BIN", None)
+    env.pop("VIRTUAL_ENV", None)
     env["PATH"] = ""
     env.update(extra_env or {})
     return subprocess.run(

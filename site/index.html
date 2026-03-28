@@ -1,170 +1,17 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>SOUL | Terminal-first AI Companion</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+     <title>SOUL | Terminal-first AI Companion</title>
     <meta
       name="description"
       content="SOUL is a terminal-first AI companion with mood awareness, SQLite-backed memory, personality drift, and optional Telegram and voice surfaces."
     />
-    <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <div class="page-shell">
-      <header class="hero">
-        <nav class="topbar">
-          <a class="brand" href="index.html">SOUL</a>
-          <div class="topbar-links">
-            <a href="https://github.com/sparkz-technology/soul">GitHub</a>
-            <a href="https://github.com/sparkz-technology/soul/tree/main/docs">Docs</a>
-            <a href="https://github.com/sparkz-technology/soul/releases">Releases</a>
-          </div>
-        </nav>
-
-        <div class="hero-grid">
-          <section class="hero-copy">
-            <p class="eyebrow">Local-first AI companion</p>
-            <h1>Persistent, mood-aware conversation from your terminal.</h1>
-            <p class="lede">
-              SOUL pairs a fixed companion identity with SQLite-backed memory,
-              gradual personality drift, proactive maintenance jobs, and
-              optional Telegram or voice surfaces.
-            </p>
-            <div class="hero-actions">
-              <a class="button button-primary" href="https://github.com/sparkz-technology/soul">View Repository</a>
-              <a class="button button-secondary" href="https://github.com/sparkz-technology/soul/blob/main/README.md">Quick Start</a>
-            </div>
-          </section>
-
-          <aside class="hero-panel">
-            <div class="terminal-card">
-              <div class="terminal-bar">
-                <span></span>
-                <span></span>
-                <span></span>
-              </div>
-              <pre><code>$ soul chat
-Ara - session 6ac1d0a1 - /quit to exit
-
-You: I had a rough day.
-Ara &gt; Tell me the shape of it.
-Ara mood warm (user: venting)
-inside Ara warm (history: 8, story: loaded, memories: 4)</code></pre>
-            </div>
-          </aside>
-        </div>
-      </header>
-
-      <main>
-        <section class="section">
-          <div class="section-heading">
-            <p class="eyebrow">Why SOUL</p>
-            <h2>Built for continuity, not disposable chat.</h2>
-          </div>
-          <div class="feature-grid">
-            <article class="card">
-              <h3>Persistent memory</h3>
-              <p>Sessions, facts, milestones, reflections, and traces are stored locally in SQLite.</p>
-            </article>
-            <article class="card">
-              <h3>Mood-aware replies</h3>
-              <p>Mood classification and companion state shape each turn before the LLM generates a response.</p>
-            </article>
-            <article class="card">
-              <h3>Slow personality drift</h3>
-              <p>Resonance signals can gradually nudge humor, warmth, curiosity, and directness over time.</p>
-            </article>
-            <article class="card">
-              <h3>Multiple surfaces</h3>
-              <p>The same core pipeline powers the terminal REPL, Telegram bot, and optional voice workflow.</p>
-            </article>
-          </div>
-        </section>
-
-        <section class="section section-band">
-          <div class="section-heading">
-            <p class="eyebrow">Quick start</p>
-            <h2>Get the project running locally.</h2>
-          </div>
-          <div class="steps-grid">
-            <article class="step-card">
-              <span class="step-number">01</span>
-              <h3>Install</h3>
-              <pre><code>pip install -e ".[dev]"</code></pre>
-            </article>
-            <article class="step-card">
-              <span class="step-number">02</span>
-              <h3>Initialize</h3>
-              <pre><code>soul db init</code></pre>
-            </article>
-            <article class="step-card">
-              <span class="step-number">03</span>
-              <h3>Chat</h3>
-              <pre><code>soul chat</code></pre>
-            </article>
-          </div>
-        </section>
-
-        <section class="section">
-          <div class="section-heading">
-            <p class="eyebrow">Core surfaces</p>
-            <h2>One companion, several entry points.</h2>
-          </div>
-          <div class="surface-grid">
-            <article class="surface-card">
-              <h3>Terminal REPL</h3>
-              <p>The main user journey: streamed turns, slash commands, traces, and local memory updates.</p>
-            </article>
-            <article class="surface-card">
-              <h3>Telegram bot</h3>
-              <p>Reuse the same orchestration pipeline for a single allowed Telegram chat.</p>
-            </article>
-            <article class="surface-card">
-              <h3>Voice mode</h3>
-              <p>Record, transcribe, and optionally speak replies with the configured voice stack.</p>
-            </article>
-            <article class="surface-card">
-              <h3>Maintenance jobs</h3>
-              <p>Run consolidation, decay, drift, reflection, and proactive follow-up jobs on local state.</p>
-            </article>
-          </div>
-        </section>
-
-        <section class="section docs-section">
-          <div class="section-heading">
-            <p class="eyebrow">Documentation</p>
-            <h2>Jump into the parts that matter.</h2>
-          </div>
-          <div class="docs-grid">
-            <a class="doc-link" href="https://github.com/sparkz-technology/soul/blob/main/README.md">
-              <strong>README</strong>
-              <span>Setup, configuration, commands, and development flow.</span>
-            </a>
-            <a class="doc-link" href="https://github.com/sparkz-technology/soul/blob/main/docs/architecture.md">
-              <strong>Architecture</strong>
-              <span>Turn orchestration, memory flow, persistence, and maintenance jobs.</span>
-            </a>
-            <a class="doc-link" href="https://github.com/sparkz-technology/soul/blob/main/docs/cli-reference.md">
-              <strong>CLI reference</strong>
-              <span>Commands, in-session controls, and inspection surfaces.</span>
-            </a>
-            <a class="doc-link" href="https://github.com/sparkz-technology/soul/blob/main/docs/memory-schema.md">
-              <strong>Memory schema</strong>
-              <span>HMS scoring, retrieval, and long-term memory behavior.</span>
-            </a>
-          </div>
-        </section>
-      </main>
-
-      <footer class="footer">
-        <p>SOUL is a local-first AI companion project built around continuity, memory, and terminal-native UX.</p>
-        <div class="footer-links">
-          <a href="https://github.com/sparkz-technology/soul">Repository</a>
-          <a href="https://github.com/sparkz-technology/soul/issues">Issues</a>
-          <a href="https://github.com/sparkz-technology/soul/actions">Actions</a>
-        </div>
-      </footer>
-    </div>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
+

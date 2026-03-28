@@ -26,16 +26,31 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v5
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
         with:
           token: ${{ secrets.PAGES_DEPLOY_TOKEN != '' && secrets.PAGES_DEPLOY_TOKEN || github.token }}
           enablement: ${{ secrets.PAGES_DEPLOY_TOKEN != '' }}
 
+      - name: Install site dependencies
+        working-directory: site
+        run: npm ci
+
+      - name: Build React site
+        working-directory: site
+        run: npm run build
+
       - name: Upload static site artifact
         uses: actions/upload-pages-artifact@v4
         with:
-          path: site
+          path: site/dist
 
       - name: Deploy to GitHub Pages
         id: deployment
