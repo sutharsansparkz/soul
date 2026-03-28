@@ -1,0 +1,5 @@
+{
+  "name": "SOUL | Terminal-first AI Companion",
+  "description": "A persistent, mood-aware AI companion with SQLite-backed memory and personality drift.",
+  "requestFramePermissions": []
+}
