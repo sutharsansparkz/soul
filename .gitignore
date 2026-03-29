@@ -43,3 +43,4 @@ soul_data/voice/
 # Local test and integration scratch space
 tmp_integration_check/
 tmp_cli_direct_test_*/
+.DS_Store
