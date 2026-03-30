@@ -2,8 +2,11 @@
 
 ## Top-Level Entry Points
 
-- `soul/cli.py`: Typer application, chat REPL, memory and story commands,
-  maintenance commands, status output, and debug surfaces.
+- `soul/cli.py`: thin Typer entrypoint and compatibility layer for the public
+  CLI surface. Command registration stays here, while heavy command logic lives
+  in `soul/cli_support/`.
+- `soul/cli_support/`: feature-oriented CLI implementation modules for runtime
+  bootstrap, chat, memories, story flows, status/milestones, and debug output.
 - `soul/config.py`: Pydantic settings model, path helpers, and redacted config
   export.
 - `soul/db.py`: compatibility-oriented database helper facade used by tests and
@@ -12,6 +15,21 @@
   hooks locally.
 
 ## Package Map
+
+### `soul/cli_support/`
+
+Internal command implementations used by `soul/cli.py`.
+
+- `runtime.py` owns secure path creation, bootstrap helpers, and the guided
+  `soul init` config builder flow.
+- `chat.py` owns the interactive chat loop, local runtime shortcuts, voice
+  helpers, and in-session slash command handling.
+- `memories.py` renders memory views and keeps ranking/formatting helpers in
+  one place.
+- `story.py` renders the user story and handles the external-editor import flow.
+- `status.py` groups status, milestones, drift history, maintenance, and
+  Telegram command helpers.
+- `debug.py` renders trace, mood, memory, and personality inspection commands.
 
 ### `soul/bootstrap/`
 
@@ -130,6 +148,7 @@ Pure state helpers and bounded-drift rules.
 The `tests/` tree is contract-heavy and covers:
 
 - CLI surface and runtime behavior
+- guided setup and config bootstrap behavior
 - fail-fast startup rules
 - HMS scoring and retrieval
 - story extraction and milestone generation
