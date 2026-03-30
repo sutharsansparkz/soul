@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v1.2.0 (2026-03-30)
+
+### Features
+
+- Update package-lock.json to add peer dependencies and include .DS_Store in .gitignore
+  ([`9f43dac`](https://github.com/sparkz-technology/soul/commit/9f43dac0cfb4f7c059c0f38c4f2fd4bed715edfc))
+
+### Refactoring
+
+- Split cli into support modules
+  ([`bef3b6f`](https://github.com/sparkz-technology/soul/commit/bef3b6f4d5fbee97d09250850ec8ff39b229524d))
+
+
 ## v1.1.0 (2026-03-28)
 
 ### Features
