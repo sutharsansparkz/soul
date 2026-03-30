@@ -76,9 +76,17 @@ Optional extras:
 - `pip install -e ".[hybrid]"` for local embedding-based hybrid retrieval
 - `pip install -e ".[all]"` for everything at once
 
-### 3. Create your `.env`
+### 3. Run the guided setup
 
-Copy `.env.example` to `.env`, then set at least:
+```bash
+soul init
+```
+
+The wizard asks for your core provider settings, writes a local `.env`, and
+bootstraps the local runtime in one pass.
+
+You can still copy `.env.example` to `.env` and edit it by hand if you prefer.
+At minimum you need:
 
 - `OPENAI_API_KEY`
 - `LLM_MODEL` and `MOOD_OPENAI_MODEL` if your provider needs non-default model
@@ -93,14 +101,8 @@ Optional features stay off by default. Only enable `ENABLE_VOICE=true` or
 `ENABLE_TELEGRAM=true` after you have configured the matching credentials and
 installed the required extras.
 
-Use `soul config` after editing `.env` if you want to verify the resolved
-runtime settings with secrets redacted.
-
-### 4. Initialize the local runtime
-
-```bash
-soul db init
-```
+Use `soul config` after setup if you want to verify the resolved runtime
+settings with secrets redacted.
 
 This creates:
 
@@ -185,6 +187,8 @@ Notes:
   `ELEVENLABS_*` credentials.
 - `HYBRID_EMBEDDINGS=true` is only useful when the hybrid retrieval dependency
   set is installed.
+- `soul init` writes a local `.env` and bootstraps the default SQLite-backed
+  runtime files and directories.
 - `soul config` prints the currently resolved settings with secrets redacted.
 - `get_settings()` is cached for the life of the process, so restart the CLI
   after changing environment variables.
@@ -197,6 +201,7 @@ See `.env.example` for the full set of knobs.
 
 Top-level commands:
 
+- `soul init` for the guided first-run config and local bootstrap
 - `soul chat` for the interactive REPL
 - `soul memories` for ranked memory inspection and memory search helpers
 - `soul story` for the reconstructed user-story view
@@ -256,13 +261,15 @@ Notes:
 
 - `docs/README.md` - documentation index
 - `docs/architecture.md` - runtime architecture and data flow
-- `docs/modules.md` - package and module map
+- `docs/modules.md` - package and module map, including the `soul/cli.py` +
+  `soul/cli_support/` split
 - `docs/api.md` - CLI and Python integration surfaces
 - `docs/cli-reference.md` - quick command reference
 - `docs/memory-schema.md` - persistence model, HMS scoring, and retrieval rules
 - `docs/drift-algorithm.md` - personality drift model
 - `docs/soul-design.md` - design principles and soul-document contract
 - `docs/testing.md` - test strategy and execution notes
+- `repo_tree.txt` - current repository layout snapshot
 
 ## Contributing
 

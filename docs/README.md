@@ -9,6 +9,7 @@ and voice surfaces.
 - `README.md` for first-time setup and project overview
 - `.env.example` plus `soul/config.py` for the current configuration contract
 - `docs/cli-reference.md` for the fastest way to find commands
+- `repo_tree.txt` for a current repository layout snapshot
 - `docs/release-process.md` for the release branch, semantic-release, and
   branch-protection flow
 - `docs/testing.md` if you are contributing or validating changes
@@ -16,8 +17,10 @@ and voice surfaces.
 ## Core Runtime Docs
 
 - `docs/architecture.md` explains startup, turn flow, presence surfaces, and
-  maintenance jobs.
-- `docs/modules.md` maps the current package layout and major responsibilities.
+  maintenance jobs, including the split between the public CLI entrypoint and
+  the internal `cli_support` modules.
+- `docs/modules.md` maps the current package layout and major responsibilities,
+  including the feature-oriented CLI support package.
 - `docs/api.md` describes the public CLI and Python integration surfaces.
 - `docs/memory-schema.md` documents the SQLite persistence model, HMS scoring,
   and retrieval behavior.

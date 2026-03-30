@@ -1,18 +1,4 @@
 soul/
-├── .env.example
-├── .gitignore
-├── AGENTS.md
-├── CHANGELOG.md
-├── CONTRIBUTING.md
-├── IMPORTANT_FILES_FOR_AGENTS.md
-├── LICENSE
-├── Makefile
-├── pr.txt
-├── pyproject.toml
-├── README.md
-├── repo_tree.txt
-├── requirements.txt
-├── security_best_practices_report.md
 ├── .githooks
 │   ├── commit-msg
 │   ├── pre-commit
@@ -20,6 +6,7 @@ soul/
 │   └── prepare-commit-msg
 ├── .github
 │   └── workflows
+│       ├── pages.yml
 │       ├── release.yml
 │       └── test.yml
 ├── .vscode
@@ -32,16 +19,41 @@ soul/
 │   ├── memory-schema.md
 │   ├── modules.md
 │   ├── README.md
+│   ├── release-process.md
 │   ├── soul-design.md
 │   └── testing.md
 ├── scripts
-│   └── install-git-hooks.sh
+│   ├── install-git-hooks.sh
+│   └── resolve-python.sh
+├── site
+│   ├── public
+│   │   ├── .nojekyll
+│   │   ├── 404.html
+│   │   ├── install.sh
+│   │   └── logo.png
+│   ├── src
+│   │   ├── components
+│   │   │   ├── FeaturesSection.tsx
+│   │   │   ├── HeroSection.tsx
+│   │   │   ├── InstallSection.tsx
+│   │   │   ├── InstallTerminal.tsx
+│   │   │   ├── NavBar.tsx
+│   │   │   ├── ParallaxCTA.tsx
+│   │   │   ├── SiteFooter.tsx
+│   │   │   ├── sitePrimitives.tsx
+│   │   │   └── SiteScene.tsx
+│   │   ├── hooks
+│   │   │   └── useRepoSnapshot.ts
+│   │   ├── App.tsx
+│   │   ├── index.css
+│   │   └── main.tsx
+│   ├── index.html
+│   ├── metadata.json
+│   ├── package-lock.json
+│   ├── package.json
+│   ├── tsconfig.json
+│   └── vite.config.ts
 ├── soul
-│   ├── .gitattributes
-│   ├── __init__.py
-│   ├── cli.py
-│   ├── config.py
-│   ├── db.py
 │   ├── bootstrap
 │   │   ├── __init__.py
 │   │   ├── config.py
@@ -49,6 +61,14 @@ soul/
 │   │   ├── feature_registry.py
 │   │   ├── logging.py
 │   │   └── validator.py
+│   ├── cli_support
+│   │   ├── __init__.py
+│   │   ├── chat.py
+│   │   ├── debug.py
+│   │   ├── memories.py
+│   │   ├── runtime.py
+│   │   ├── status.py
+│   │   └── story.py
 │   ├── conversation
 │   │   ├── __init__.py
 │   │   ├── context_loader.py
@@ -64,7 +84,10 @@ soul/
 │   │   ├── mood_engine.py
 │   │   ├── post_processor.py
 │   │   ├── presence_context.py
-│   │   └── soul_loader.py
+│   │   ├── skill_loader.py
+│   │   ├── skill_templates.py
+│   │   ├── soul_loader.py
+│   │   └── timezone_utils.py
 │   ├── llm
 │   │   ├── __init__.py
 │   │   ├── client.py
@@ -79,15 +102,6 @@ soul/
 │   │   ├── proactive.py
 │   │   └── reflection.py
 │   ├── memory
-│   │   ├── __init__.py
-│   │   ├── embedder.py
-│   │   ├── episodic.py
-│   │   ├── fts.py
-│   │   ├── retriever.py
-│   │   ├── scorer.py
-│   │   ├── shared_language.py
-│   │   ├── user_story.py
-│   │   ├── vector_store.py
 │   │   ├── repositories
 │   │   │   ├── __init__.py
 │   │   │   ├── app_settings.py
@@ -101,10 +115,19 @@ soul/
 │   │   │   ├── reflections.py
 │   │   │   ├── shared_language.py
 │   │   │   └── user_facts.py
-│   │   └── retrieval
-│   │       ├── __init__.py
-│   │       ├── retriever.py
-│   │       └── scorer.py
+│   │   ├── retrieval
+│   │   │   ├── __init__.py
+│   │   │   ├── retriever.py
+│   │   │   └── scorer.py
+│   │   ├── __init__.py
+│   │   ├── embedder.py
+│   │   ├── episodic.py
+│   │   ├── fts.py
+│   │   ├── retriever.py
+│   │   ├── scorer.py
+│   │   ├── shared_language.py
+│   │   ├── user_story.py
+│   │   └── vector_store.py
 │   ├── observability
 │   │   ├── __init__.py
 │   │   ├── debug.py
@@ -121,58 +144,87 @@ soul/
 │   │   ├── runtime.py
 │   │   ├── telegram.py
 │   │   └── voice.py
-│   └── state
-│       ├── __init__.py
-│       ├── drift.py
-│       ├── milestones.py
-│       ├── mood.py
-│       └── personality.py
+│   ├── state
+│   │   ├── __init__.py
+│   │   ├── drift.py
+│   │   ├── milestones.py
+│   │   ├── mood.py
+│   │   └── personality.py
+│   ├── templates
+│   │   └── skills
+│   │       └── file-explorer
+│   │           └── SKILL.md
+│   ├── .gitattributes
+│   ├── __init__.py
+│   ├── cli.py
+│   ├── config.py
+│   └── db.py
 ├── soul_data
-│   ├── soul.yaml
-│   └── db
-│       └── .gitkeep
-└── tests
-    ├── __init__.py
-    ├── conftest.py
-    ├── test_background_tasks.py
-    ├── test_chat_save_boost.py
-    ├── test_cli_bug_fixes_exploration.py
-    ├── test_cli_bug_fixes_preservation.py
-    ├── test_cli_contract.py
-    ├── test_cli_memory_commands.py
-    ├── test_cli_memory_contract.py
-    ├── test_cli_relative_time.py
-    ├── test_context_builder_memory_flow.py
-    ├── test_drift_engine.py
-    ├── test_embedder.py
-    ├── test_fail_fast_architecture.py
-    ├── test_file_permissions.py
-    ├── test_fresh_deploy.py
-    ├── test_fts_memory.py
-    ├── test_hms_config.py
-    ├── test_hms_decay.py
-    ├── test_hms_retriever.py
-    ├── test_hms_scorer.py
-    ├── test_llm_client.py
-    ├── test_mood_engine.py
-    ├── test_persona_regression.py
-    ├── test_personality_drift_injection.py
-    ├── test_presence_context.py
-    ├── test_proactive_cli_delivery.py
-    ├── test_proactive_triggers.py
-    ├── test_reflection_and_milestones.py
-    ├── test_retention_archiving.py
-    ├── test_runtime_pipeline.py
-    ├── test_schema_initialization.py
-    ├── test_soul_contract.py
-    ├── test_sqlite_foreign_keys.py
-    ├── test_status_fallback_mood.py
-    ├── test_status_next_milestone.py
-    ├── test_user_story_schema.py
-    ├── test_voice_cli.py
-    ├── fixtures
-    │   └── persona_conversations.json
-    └── presence
-        ├── test_runtime.py
-        ├── test_telegram.py
-        └── test_voice.py
+│   ├── db
+│   │   └── .gitkeep
+│   └── soul.yaml
+├── tests
+│   ├── fixtures
+│   │   └── persona_conversations.json
+│   ├── presence
+│   │   ├── test_runtime.py
+│   │   ├── test_telegram.py
+│   │   └── test_voice.py
+│   ├── __init__.py
+│   ├── conftest.py
+│   ├── test_background_tasks.py
+│   ├── test_chat_save_boost.py
+│   ├── test_cli_bug_fixes_exploration.py
+│   ├── test_cli_bug_fixes_preservation.py
+│   ├── test_cli_contract.py
+│   ├── test_cli_init.py
+│   ├── test_cli_memory_commands.py
+│   ├── test_cli_memory_contract.py
+│   ├── test_cli_relative_time.py
+│   ├── test_context_builder_memory_flow.py
+│   ├── test_drift_engine.py
+│   ├── test_embedder.py
+│   ├── test_fail_fast_architecture.py
+│   ├── test_file_permissions.py
+│   ├── test_fresh_deploy.py
+│   ├── test_fts_memory.py
+│   ├── test_github_pages_contract.py
+│   ├── test_hms_config.py
+│   ├── test_hms_decay.py
+│   ├── test_hms_retriever.py
+│   ├── test_hms_scorer.py
+│   ├── test_llm_client.py
+│   ├── test_mood_engine.py
+│   ├── test_persona_regression.py
+│   ├── test_personality_drift_injection.py
+│   ├── test_presence_context.py
+│   ├── test_proactive_cli_delivery.py
+│   ├── test_proactive_triggers.py
+│   ├── test_python_resolution.py
+│   ├── test_reflection_and_milestones.py
+│   ├── test_release_contract.py
+│   ├── test_retention_archiving.py
+│   ├── test_runtime_pipeline.py
+│   ├── test_schema_initialization.py
+│   ├── test_soul_contract.py
+│   ├── test_sqlite_foreign_keys.py
+│   ├── test_status_fallback_mood.py
+│   ├── test_status_next_milestone.py
+│   ├── test_timezone_utils.py
+│   ├── test_user_story_schema.py
+│   ├── test_voice_cli.py
+│   └── test_workspace_skills.py
+├── .env.example
+├── .gitignore
+├── AGENTS.md
+├── CHANGELOG.md
+├── CONTRIBUTING.md
+├── IMPORTANT_FILES_FOR_AGENTS.md
+├── LICENSE
+├── Makefile
+├── pr.txt
+├── pyproject.toml
+├── README.md
+├── repo_tree.txt
+├── requirements.txt
+└── security_best_practices_report.md

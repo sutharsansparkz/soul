@@ -49,7 +49,7 @@ The current test suite covers:
 
 - soul document loading and prompt compilation
 - startup validation and fail-fast architecture rules
-- CLI command contract and chat UX
+- CLI command contract, guided setup, and chat UX
 - local runtime shortcuts and streaming behavior
 - HMS scoring, decay, retrieval ranking, and FTS integration
 - user-story extraction and story editing flows
@@ -71,6 +71,10 @@ python -m pytest -q tests/presence/test_telegram.py
 
 These are useful when you are changing one area and want faster iteration than a
 full-suite run.
+
+For CLI refactors specifically, the contract tests are designed to let the
+implementation move between `soul/cli.py` and `soul/cli_support/` without
+changing user-visible behavior.
 
 ## Live Provider Tests
 

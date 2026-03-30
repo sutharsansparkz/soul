@@ -8,6 +8,10 @@ conversation pipeline and the same persistence layer.
 
 The major runtime layers are:
 
+- CLI command layer: `soul/cli.py` registers commands and preserves the stable
+  public CLI surface
+- CLI support layer: `soul/cli_support/` holds the command implementations for
+  runtime bootstrap, chat, memory views, story flows, status, and debug output
 - bootstrap: settings, feature registry, startup validation, schema readiness
 - conversation: turn orchestration and context loading
 - core: soul loading, mood analysis, prompt assembly, and post-processing
@@ -21,7 +25,9 @@ The major runtime layers are:
 Most user-facing commands bootstrap the runtime in the following order:
 
 1. Load `Settings` from environment variables and `.env`.
-2. Create local runtime paths with `soul.cli._ensure_runtime_files()`.
+2. Create local runtime paths with `soul.cli._ensure_runtime_files()`, which is
+   the stable CLI wrapper around the runtime helpers in
+   `soul/cli_support/runtime.py`.
 3. Run `validate_startup()` to verify:
    - a SQLite URL is configured
    - the timezone is valid
@@ -36,6 +42,11 @@ Most user-facing commands bootstrap the runtime in the following order:
 `soul config`, `soul version`, and `soul db init` are lighter-weight entry
 points and do not run the full chat bootstrap path. `soul db` with no
 subcommand prints group help.
+
+The `soul init` first-run setup path is also lighter-weight than the chat
+bootstrap. It writes a local `.env`, creates secure runtime directories, and
+initializes SQLite without requiring the full provider validation needed for
+conversation commands.
 
 ## Conversation Flow
 
@@ -70,8 +81,8 @@ calling the LLM provider.
 
 SOUL exposes one shared runtime across multiple interaction surfaces:
 
-- CLI: the primary experience, including replay, slash commands, and optional
-  voice helpers.
+- CLI: the primary experience, with command registration kept in `soul/cli.py`
+  and feature-specific behavior implemented under `soul/cli_support/`.
 - Telegram: `TelegramBotRunner` uses `PresenceRuntime`, enforces a single
   allowed chat, and stores message history in the same database as the CLI.
 - Voice: `VoiceBridge` handles recording, Whisper transcription, ElevenLabs
@@ -129,6 +140,7 @@ SOUL keeps the runtime inspectable without a separate observability service:
 - `soul status` prints a human-readable summary of sessions, mood, features, and
   proactive candidates.
 - `soul config` prints a redacted settings snapshot.
+- `soul init` writes a first-run config and bootstraps the local runtime.
 - `soul debug ...` commands expose stored traces, facts, moods, memories, and
   personality state through a mix of JSON and rich table output.
 - failed generations also produce stored traces, which makes debugging easier

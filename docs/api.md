@@ -7,12 +7,21 @@ The public integration surfaces are:
 - the Python `PresenceRuntime` class
 - the Telegram bot runner built on top of `PresenceRuntime`
 
+Implementation note:
+
+- the public CLI contract still lives at `soul/cli.py`
+- the command implementations are now split by responsibility under
+  `soul/cli_support/`
+- this internal split does not change the public command surface described
+  below
+
 ## Top-Level CLI Contract
 
 Direct commands:
 
 | Command | Behavior | Output style |
 | --- | --- | --- |
+| `soul init` | Run the guided config builder and bootstrap the local runtime. | Rich prompts plus summary table |
 | `soul chat` | Start the interactive companion REPL. | Rich terminal UI with streaming replies |
 | `soul drift` | Show recorded personality-state history. | Table |
 | `soul milestones` | Show relationship timeline events. | Table |
@@ -167,3 +176,6 @@ missing.
 
 The practical inspection surface for this contract is `soul config`, which
 prints the resolved settings with secrets redacted.
+
+For first-run setup, `soul init` writes a local `.env` and prepares the
+default SQLite-backed runtime directories and files.

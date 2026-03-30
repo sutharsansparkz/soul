@@ -12,9 +12,13 @@ Development equivalent:
 python -m soul.cli
 ```
 
+The public CLI entrypoint stays in `soul/cli.py`, while the heavier command
+implementations are organized under `soul/cli_support/`.
+
 ## Bootstrap And Introspection
 
 ```bash
+soul init
 soul db
 soul db init
 soul db rebuild-fts
@@ -22,6 +26,8 @@ soul config
 soul version
 ```
 
+- `soul init` walks through first-run setup, writes a local `.env`, and
+  bootstraps the SQLite runtime.
 - `soul db` with no subcommand prints help for the database command group.
 - `soul db init` creates runtime directories and initializes the SQLite schema.
 - `soul db rebuild-fts` rebuilds the episodic-memory FTS5 index.
