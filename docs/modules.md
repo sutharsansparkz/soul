@@ -2,9 +2,14 @@
 
 ## Top-Level Entry Points
 
-- `soul/cli.py`: thin Typer entrypoint and compatibility layer for the public
-  CLI surface. Command registration stays here, while heavy command logic lives
-  in `soul/cli_support/`.
+- `soul/cli.py`: public CLI entrypoint. It dispatches to the React frontend by
+  default and uses an internal bypass to run Typer commands for backend calls.
+- `ui/cli/`: React-based CLI frontend package.
+  - `src/index.mjs`: Ink chat UI.
+  - `src/dispatch.mjs`: dispatcher UI powered by a custom `react-reconciler`
+    host renderer.
+  - `src/reconciler.mjs`: custom React host config that renders dispatcher
+    output to the terminal.
 - `soul/cli_support/`: feature-oriented CLI implementation modules for runtime
   bootstrap, chat, memories, story flows, status/milestones, and debug output.
 - `soul/config.py`: Pydantic settings model, path helpers, and redacted config
@@ -30,6 +35,10 @@ Internal command implementations used by `soul/cli.py`.
 - `status.py` groups status, milestones, drift history, maintenance, and
   Telegram command helpers.
 - `debug.py` renders trace, mood, memory, and personality inspection commands.
+- `ink_bridge.py` exposes session start/turn/close bridge calls for the Ink
+  chat frontend.
+- `react_bridge.py` exposes command invocation output as JSON for the dispatcher
+  frontend.
 
 ### `soul/bootstrap/`
 

@@ -14,7 +14,12 @@ places without rediscovering the tree.
 - `soul/config.py` (the `Settings` contract and aliases)
 
 ## CLI / core runtime
-- `soul/cli.py` (Typer commands, chat REPL, CLI UX + output contracts)
+- `soul/cli.py` (public CLI entrypoint, React dispatcher handoff, backend bypass)
+- `ui/cli/src/dispatch.mjs` (React dispatcher UI for non-chat commands)
+- `ui/cli/src/index.mjs` (Ink chat UI)
+- `ui/cli/src/reconciler.mjs` (custom `react-reconciler` host renderer)
+- `soul/cli_support/react_bridge.py` (command execution bridge for dispatcher)
+- `soul/cli_support/ink_bridge.py` (turn/session bridge for chat UI)
 - `soul/conversation/orchestrator.py` (single-turn lifecycle + trace writes)
 - `soul/core/context_builder.py` (prompt assembly + memory injection rules)
 - `soul/core/mood_engine.py` (mood classification + fail-safe fallback)
@@ -33,4 +38,3 @@ places without rediscovering the tree.
 ## Tests
 - `tests/conftest.py` (global fixtures + live_llm gating)
 - `tests/test_*` (contract suite)
-

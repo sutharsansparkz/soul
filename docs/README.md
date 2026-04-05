@@ -17,10 +17,10 @@ and voice surfaces.
 ## Core Runtime Docs
 
 - `docs/architecture.md` explains startup, turn flow, presence surfaces, and
-  maintenance jobs, including the split between the public CLI entrypoint and
-  the internal `cli_support` modules.
+  maintenance jobs, including the split between the React CLI frontend,
+  the public Python entrypoint, and internal `cli_support` modules.
 - `docs/modules.md` maps the current package layout and major responsibilities,
-  including the feature-oriented CLI support package.
+  including `ui/cli` frontend components and CLI bridge modules.
 - `docs/api.md` describes the public CLI and Python integration surfaces.
 - `docs/memory-schema.md` documents the SQLite persistence model, HMS scoring,
   and retrieval behavior.

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -226,6 +228,53 @@ def chat(
         voice_output_func=_voice_output,
         trigger_maintenance_if_due_func=trigger_maintenance_if_due,
     )
+
+
+@app.command("ink-chat")
+def ink_chat(
+    install: bool = typer.Option(
+        False,
+        "--install",
+        help="Install/update npm dependencies for the Ink UI before launching.",
+    ),
+) -> None:
+    """Start an Ink + React chat interface (requires Node.js and npm)."""
+    project_root = Path(__file__).resolve().parent.parent
+    ui_dir = project_root / "ui" / "cli"
+
+    if not ui_dir.exists():
+        console.print(f"[red]Ink UI directory not found:[/red] {ui_dir}")
+        raise typer.Exit(code=1)
+
+    if install:
+        try:
+            subprocess.run(["npm", "--prefix", str(ui_dir), "install"], check=True)
+        except FileNotFoundError:
+            console.print("[red]npm is not installed or not on PATH.[/red]")
+            raise typer.Exit(code=1) from None
+        except subprocess.CalledProcessError as exc:
+            console.print(f"[red]npm install failed with exit code {exc.returncode}.[/red]")
+            raise typer.Exit(code=exc.returncode or 1) from None
+
+    command = [
+        "npm",
+        "--prefix",
+        str(ui_dir),
+        "run",
+        "soul:ink-chat",
+        "--",
+        "--python",
+        sys.executable,
+    ]
+
+    try:
+        subprocess.run(command, check=True)
+    except FileNotFoundError:
+        console.print("[red]npm is not installed or not on PATH.[/red]")
+        console.print("[dim]Install Node.js + npm, then run `soul ink-chat --install`.[/dim]")
+        raise typer.Exit(code=1) from None
+    except subprocess.CalledProcessError as exc:
+        raise typer.Exit(code=exc.returncode or 1) from None
 
 
 @memories_app.callback(invoke_without_command=True)
@@ -455,7 +504,44 @@ def version() -> None:
 
 
 def main() -> None:
-    app()
+    if os.environ.get("SOUL_SKIP_REACT_DISPATCH") == "1":
+        app()
+        return
+
+    project_root = Path(__file__).resolve().parent.parent
+    ui_dir = project_root / "ui" / "cli"
+    if not ui_dir.exists():
+        console.print(f"[red]React CLI UI directory not found:[/red] {ui_dir}")
+        raise typer.Exit(code=1)
+
+    ink_package = ui_dir / "node_modules" / "ink" / "package.json"
+    if not ink_package.exists():
+        try:
+            subprocess.run(["npm", "--prefix", str(ui_dir), "install"], check=True)
+        except FileNotFoundError:
+            console.print("[red]npm is not installed or not on PATH.[/red]")
+            raise typer.Exit(code=1) from None
+        except subprocess.CalledProcessError as exc:
+            console.print(f"[red]Failed to install React CLI dependencies (exit {exc.returncode}).[/red]")
+            raise typer.Exit(code=exc.returncode or 1) from None
+
+    command = [
+        "npm",
+        "--prefix",
+        str(ui_dir),
+        "run",
+        "soul:dispatch",
+        "--",
+        "--python",
+        sys.executable,
+        *sys.argv[1:],
+    ]
+    try:
+        completed = subprocess.run(command, check=False)
+    except FileNotFoundError:
+        console.print("[red]npm is not installed or not on PATH.[/red]")
+        raise typer.Exit(code=1) from None
+    raise typer.Exit(code=completed.returncode or 0)
 
 
 if __name__ == "__main__":

@@ -9,9 +9,9 @@ The public integration surfaces are:
 
 Implementation note:
 
-- the public CLI contract still lives at `soul/cli.py`
-- the command implementations are now split by responsibility under
-  `soul/cli_support/`
+- the public CLI entrypoint still lives at `soul/cli.py`
+- `soul/cli.py` dispatches through the React CLI frontend in `ui/cli/`
+- command execution logic remains in Python under `soul/cli_support/`
 - this internal split does not change the public command surface described
   below
 
@@ -22,7 +22,8 @@ Direct commands:
 | Command | Behavior | Output style |
 | --- | --- | --- |
 | `soul init` | Run the guided config builder and bootstrap the local runtime. | Rich prompts plus summary table |
-| `soul chat` | Start the interactive companion REPL. | Rich terminal UI with streaming replies |
+| `soul chat` | Start the interactive companion REPL. | React dispatcher + Ink chat UI |
+| `soul ink-chat` | Launch the chat UI directly. | Ink chat UI |
 | `soul drift` | Show recorded personality-state history. | Table |
 | `soul milestones` | Show relationship timeline events. | Table |
 | `soul status` | Summarize runtime health, counts, mood, features, and proactive state. | Table |
@@ -111,6 +112,7 @@ Voice notes:
   `whisper` and `sounddevice` packages.
 - If recording is unavailable at runtime, chat falls back to typed input while
   keeping voice output enabled.
+- `soul chat` and `soul ink-chat` use the same Python orchestration pipeline.
 
 ## Python Integration
 

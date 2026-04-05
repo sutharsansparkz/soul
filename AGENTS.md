@@ -4,7 +4,7 @@ This repository is a local-first AI companion implemented as a Python package wi
 This file is meant to help automated agents contribute safely and effectively.
 
 ## What to build (product intent)
-- The primary user journey is `soul chat`: interactive REPL, streamed responses, SQLite-backed sessions/messages, and post-turn memory/state updates.
+- The primary user journey is `soul chat`: interactive REPL (React dispatcher + Ink chat UI), streamed responses, SQLite-backed sessions/messages, and post-turn memory/state updates.
 - Optional surfaces reuse the same core pipeline:
   - Telegram bot (`soul telegram-bot`)
   - Voice helpers (`soul chat --voice`)
@@ -12,7 +12,13 @@ This file is meant to help automated agents contribute safely and effectively.
 
 ## High-signal entry points (start here)
 - CLI entrypoint: `soul/cli.py`
-  - Turn loop + slash commands + “memories/search” UX
+  - Public command entrypoint + React dispatcher handoff
+- React CLI frontend: `ui/cli/src/dispatch.mjs`
+  - Non-chat command UX rendered by custom `react-reconciler`
+- Ink chat frontend: `ui/cli/src/index.mjs`
+  - Interactive chat interface
+- CLI bridge modules: `soul/cli_support/react_bridge.py` and `soul/cli_support/ink_bridge.py`
+  - Connect React/Ink frontend calls to Python runtime behavior
 - Core turn orchestrator: `soul/conversation/orchestrator.py`
   - Mood analysis -> context build -> LLM call -> persistence -> async post-processing -> trace write
 - Prompt assembly: `soul/core/context_builder.py`
@@ -74,4 +80,3 @@ This file is meant to help automated agents contribute safely and effectively.
 2. Fix the smallest component that restores the contract.
 3. Add/adjust tests when you harden behavior or add invariants.
 4. Re-run the full suite and compile sanity check.
-
