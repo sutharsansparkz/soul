@@ -14,6 +14,12 @@ SQLite-first CLI runtime, so a little upfront context goes a long way.
 pip install -e ".[dev]"
 ```
 
+Install frontend dependencies for the React CLI:
+
+```bash
+npm --prefix ui/cli install
+```
+
 3. Copy `.env.example` to `.env`.
 4. Set `OPENAI_API_KEY` before running commands that bootstrap the full
    runtime. Set `OPENAI_BASE_URL` only when you are using a non-default
@@ -59,6 +65,9 @@ Helpful focused commands:
 python -m pytest -q tests/test_cli_contract.py
 python -m pytest -q tests/test_runtime_pipeline.py
 python -m pytest -q tests/presence/test_telegram.py
+node --check ui/cli/src/dispatch.mjs
+node --check ui/cli/src/index.mjs
+node --check ui/cli/src/reconciler.mjs
 ```
 
 Notes:

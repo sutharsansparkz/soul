@@ -15,8 +15,13 @@ At its core, SOUL combines:
 
 ## Highlights
 
-- `soul chat` runs an interactive REPL and streams replies directly in the
-  terminal.
+- `soul` now routes all commands through a React terminal dispatcher.
+- The frontend uses both render engines:
+  - Ink for interactive chat (`soul chat` / `soul ink-chat`)
+  - a custom `react-reconciler` renderer for command dispatch output
+- `soul chat` runs via an Ink + React interface and uses the same Python
+  orchestration pipeline under the hood.
+- `soul ink-chat` launches the same Ink chat surface directly.
 - `soul chat` prints a compact per-turn trace so you can see what parts of the
   runtime are active.
 - GitHub Pages deployment is included for a lightweight project site published
@@ -203,6 +208,7 @@ Top-level commands:
 
 - `soul init` for the guided first-run config and local bootstrap
 - `soul chat` for the interactive REPL
+- `soul ink-chat` for the Ink + React terminal UI (requires Node.js/npm)
 - `soul memories` for ranked memory inspection and memory search helpers
 - `soul story` for the reconstructed user-story view
 - `soul drift` for personality-state history
@@ -225,6 +231,27 @@ Inside `soul chat`, the slash commands are:
 - `/voice on|off`
 
 For examples, see `docs/cli-reference.md`.
+
+### Optional Ink + React Chat UI
+
+The React UI dependencies are auto-installed on first `soul` run if missing.
+You can also install/update them explicitly:
+
+```bash
+soul ink-chat --install
+```
+
+Then launch chat directly:
+
+```bash
+soul ink-chat
+```
+
+The Python Typer surface remains as an internal backend. To run it directly:
+
+```bash
+SOUL_SKIP_REACT_DISPATCH=1 soul status
+```
 
 ## Data And Privacy
 

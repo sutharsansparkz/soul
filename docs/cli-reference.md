@@ -6,6 +6,11 @@ Installed entrypoint:
 soul
 ```
 
+`soul` commands run through a React-based dispatcher UI.
+Render engines:
+- Ink powers the interactive chat surface.
+- A custom `react-reconciler` host renderer powers dispatcher output.
+
 Development equivalent:
 
 ```bash
@@ -14,6 +19,9 @@ python -m soul.cli
 
 The public CLI entrypoint stays in `soul/cli.py`, while the heavier command
 implementations are organized under `soul/cli_support/`.
+
+Set `SOUL_SKIP_REACT_DISPATCH=1` to run commands directly through Typer without
+the React wrapper.
 
 ## Bootstrap And Introspection
 
@@ -38,16 +46,21 @@ soul version
 
 ```bash
 soul chat
+soul ink-chat
 soul chat --replay
 soul chat --voice
 soul chat --voice-input sample.wav --voice
 soul chat --record-seconds 5 --voice
+soul ink-chat --install
 ```
 
 Notes:
 
-- `soul chat` streams replies directly in the terminal.
+- `soul chat` launches the Ink chat surface through the React dispatcher.
+- `soul ink-chat` launches the same Ink chat surface directly.
 - The chat UI prints a compact turn trace before each reply.
+- UI dependencies are auto-installed on first `soul` run when missing.
+- `soul ink-chat --install` forces `npm install` for `ui/cli` before launch.
 - `--voice` is feature-gated by `ENABLE_VOICE=true`.
 - `--voice-input` and `--record-seconds` use the same voice bridge as the live
   voice mode.

@@ -8,8 +8,12 @@ conversation pipeline and the same persistence layer.
 
 The major runtime layers are:
 
-- CLI command layer: `soul/cli.py` registers commands and preserves the stable
-  public CLI surface
+- CLI frontend layer:
+  - `ui/cli/src/dispatch.mjs` renders command execution UX with a custom
+    `react-reconciler` host renderer
+  - `ui/cli/src/index.mjs` renders interactive chat with Ink
+- CLI entrypoint: `soul/cli.py` is the public `soul` command and bridges
+  frontend calls to Python command execution
 - CLI support layer: `soul/cli_support/` holds the command implementations for
   runtime bootstrap, chat, memory views, story flows, status, and debug output
 - bootstrap: settings, feature registry, startup validation, schema readiness
@@ -22,13 +26,17 @@ The major runtime layers are:
 
 ## Startup Flow
 
-Most user-facing commands bootstrap the runtime in the following order:
+Most user-facing commands bootstrap in the following order:
 
-1. Load `Settings` from environment variables and `.env`.
-2. Create local runtime paths with `soul.cli._ensure_runtime_files()`, which is
-   the stable CLI wrapper around the runtime helpers in
+1. `soul/cli.py` dispatches to the React CLI frontend (`ui/cli/`), installing
+   frontend dependencies when needed.
+2. The frontend invokes Python backend commands through bridge modules in
+   `soul/cli_support/`.
+3. Python backend command paths load `Settings` from environment variables and
+   `.env`.
+4. Create local runtime paths with runtime helpers in
    `soul/cli_support/runtime.py`.
-3. Run `validate_startup()` to verify:
+5. Run `validate_startup()` to verify:
    - a SQLite URL is configured
    - the timezone is valid
    - the database can be opened
@@ -36,8 +44,8 @@ Most user-facing commands bootstrap the runtime in the following order:
    - provider configuration exists
    - enabled features have the required credentials and dependencies
    - obsolete JSON state files are not still present in `SOUL_DATA_DIR`
-4. Load the immutable soul document from `soul_data/soul.yaml`.
-5. Hand off to the CLI command or presence surface.
+6. Load the immutable soul document from `soul_data/soul.yaml`.
+7. Hand off to the command handler or presence surface.
 
 `soul config`, `soul version`, and `soul db init` are lighter-weight entry
 points and do not run the full chat bootstrap path. `soul db` with no
@@ -50,7 +58,8 @@ conversation commands.
 
 ## Conversation Flow
 
-The main request path for `soul chat` and `PresenceRuntime` looks like this:
+The main request path for `soul chat`/`soul ink-chat` and `PresenceRuntime`
+looks like this:
 
 1. Create or resume a session in `sessions`.
 2. Analyze the new user message with `MoodEngine`.
@@ -81,8 +90,8 @@ calling the LLM provider.
 
 SOUL exposes one shared runtime across multiple interaction surfaces:
 
-- CLI: the primary experience, with command registration kept in `soul/cli.py`
-  and feature-specific behavior implemented under `soul/cli_support/`.
+- CLI: the primary experience, with React frontend UX in `ui/cli/` and
+  feature-specific backend behavior in `soul/cli_support/`.
 - Telegram: `TelegramBotRunner` uses `PresenceRuntime`, enforces a single
   allowed chat, and stores message history in the same database as the CLI.
 - Voice: `VoiceBridge` handles recording, Whisper transcription, ElevenLabs

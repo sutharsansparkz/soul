@@ -73,8 +73,16 @@ These are useful when you are changing one area and want faster iteration than a
 full-suite run.
 
 For CLI refactors specifically, the contract tests are designed to let the
-implementation move between `soul/cli.py` and `soul/cli_support/` without
-changing user-visible behavior.
+implementation move between `ui/cli`, `soul/cli.py`, and `soul/cli_support/`
+without changing user-visible behavior.
+
+For frontend smoke checks, run:
+
+```bash
+node --check ui/cli/src/dispatch.mjs
+node --check ui/cli/src/index.mjs
+node --check ui/cli/src/reconciler.mjs
+```
 
 ## Live Provider Tests
 
