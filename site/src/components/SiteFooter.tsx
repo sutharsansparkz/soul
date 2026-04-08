@@ -9,7 +9,7 @@ export const SiteFooter = ({repoSnapshot}: {repoSnapshot: RepoSnapshot}) => {
       <div className="max-w-7xl mx-auto grid md:grid-cols-3 gap-16 items-center">
         <div className="flex items-center gap-4">
           <div className="logo-badge w-12 h-12 rounded-2xl">
-            <img src="/logo.png" alt="SOUL logo" className="logo-image-footer" />
+            <img src="logo.png" alt="SOUL logo" className="logo-image-footer" />
           </div>
           <span className="font-black tracking-tighter text-3xl">SOUL</span>
         </div>

@@ -23,7 +23,7 @@ export const NavBar = ({repoSnapshot}: NavBarProps) => {
         <div className="max-w-7xl mx-auto px-8 h-20 flex items-center justify-between">
           <motion.div initial={{opacity: 0, x: -20}} animate={{opacity: 1, x: 0}} className="flex items-center gap-3 group cursor-pointer">
             <div className="logo-badge group-hover:rotate-12 transition-transform">
-              <img src="/logo.png" alt="SOUL logo" className="logo-image-header" />
+              <img src="logo.png" alt="SOUL logo" className="logo-image-header" />
             </div>
             <span className="font-black tracking-tighter text-2xl">SOUL</span>
           </motion.div>
