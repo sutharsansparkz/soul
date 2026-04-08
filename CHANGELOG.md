@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.2.1 (2026-04-08)
+
+### Bug Fixes
+
+- Update logo image paths to relative URLs
+  ([`38c1530`](https://github.com/sutharsansparkz/soul/commit/38c15304116d5d7e09511ebbf45844265d500fd2))
+
+
 ## v1.2.0 (2026-03-30)
 
 ### Features
